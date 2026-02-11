@@ -1,0 +1,23 @@
+# Project-specific Codex configuration (optional)
+# Use with: CODEX_HOME=$(pwd)/.codex codex ...
+
+# Increase if you have larger layered instructions.
+project_doc_max_bytes = 65536
+
+# If your organization uses alternate instruction filenames, add them here.
+#
+# We intentionally include a small set of **stable** filenames that act as
+# "external memory" for agents. This reduces drift across long-running tasks
+# and helps align the IDE extension and CLI agent runs.
+project_doc_fallback_filenames = [
+  "CLAUDE.md",
+  "AGENTS.override.md",
+  "progress.txt",
+  "README.md",
+  "docs/USER_MANUAL.md",
+  "docs/master_doc.md",
+  "docs/ui_spec.md",
+  "docs/policies/AGENT_OPERATING_MODEL.md",
+  "TEAM_GUIDE.md",
+  ".agents.md",
+]

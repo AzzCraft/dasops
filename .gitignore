@@ -1,0 +1,80 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Test / coverage
+.tox/
+.nox/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.cache/
+nosetests.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Type checkers / linters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Documentation builds
+docs/_build/
+site/
+
+# Logs
+*.log
+
+# Editor / OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/

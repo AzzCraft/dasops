@@ -1,0 +1,38 @@
+# progress.txt — Project progress (external memory for AI + humans)
+
+This file is the **external memory layer** for AI-assisted development.
+
+- AI agents have **no durable memory** across sessions.
+- Humans lose context when switching branches/terminals/IDE windows.
+
+**Rule:** Update this file at the end of every meaningful work session, and commit it.
+
+---
+
+## Current focus
+
+- Active change-id: <change-id>
+- Orchestrator: <what you are planning / reviewing now>
+- Workers: <who is doing what>
+
+## Completed (recent)
+
+- YYYY-MM-DD: <summary>
+
+## In progress
+
+- T-001 (owner=<id>, branch=<name>): <status>
+
+## Next / planned
+
+- <next item>
+
+## Blockers / risks
+
+- <blocker>
+
+## Useful commands
+
+- Baseline: `./scripts/verify`
+- Per-task verify gate: see `openspec/changes/<change-id>/tasks.md`
+- Task status: `dasops list-tasks --change-id <change-id>`

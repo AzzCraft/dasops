@@ -1,0 +1,4 @@
+This is a DAS + OpenSpec FACTORY repo (tooling + templates).
+
+Do not build your product here.
+Use `dasops create` or the GUI to generate a separate product repo.

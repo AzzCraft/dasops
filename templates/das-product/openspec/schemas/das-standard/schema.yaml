@@ -1,0 +1,69 @@
+name: das-standard
+version: 1
+
+artifacts:
+  - id: master-doc-delta
+    generates: master_doc_delta.md
+    description: "DAS-aligned Master Doc Delta for this change"
+    requires: []
+    template: master_doc_delta.md
+    instruction: |
+      You are an architect following the DAS Standard.
+
+      Generate a Master Doc Delta for THIS change only.
+      It must be consistent with:
+        - docs/master_doc.md
+        - docs/ui_spec.md
+
+      Required sections:
+        - Intent + Scope delta
+        - Conformance profile impact (L0/L1/L2)
+        - Workflow/UI impact summary
+        - Traceability updates (requirements -> contracts -> tests/gates)
+        - Determinism + budgets impact
+        - Risks + mitigations
+
+  - id: contracts
+    generates: contracts_plan.md
+    description: "Contract plan aligned to DAS §4 (interfaces + fixtures + compatibility)"
+    requires: [master-doc-delta]
+    template: contracts_plan.md
+    instruction: |
+      You are a contracts engineer following the DAS Standard.
+
+      Produce a contract plan for cross-boundary interfaces.
+      Requirements:
+        - list contract surfaces (APIs/events/persisted artifacts)
+        - specify compatibility mode and change classification
+        - include casing rules (camelCase for serialized fields)
+        - propose fixtures (paths + examples)
+
+  - id: verification-plan
+    generates: verification_plan.md
+    description: "Verification plan aligned to DAS §10 (verify gates)"
+    requires: [contracts]
+    template: verification_plan.md
+    instruction: |
+      You are a quality engineer following the DAS Standard.
+
+      Define verification gates for this change:
+        - exact verify commands per repo/module
+        - boundary checks first (fail fast)
+        - unit/integration/contract tests strategy
+        - required evidence in PR
+
+  - id: execution-plan
+    generates: tasks.md
+    description: "Execution plan aligned to DAS §11 (WBS + acceptance + verify commands)"
+    requires: [master-doc-delta, contracts, verification-plan]
+    template: tasks.md
+    instruction: |
+      You are a technical program manager following the DAS Standard.
+
+      Break the change into tasks. For EACH task you MUST specify:
+        - Scope (repo/module)
+        - Contract impact (None/Additive/Behavioral/Breaking)
+        - Determinism tier impact (if any)
+        - Budgets impact (token/time/storage/etc)
+        - Verification: exact verify command to run
+        - Acceptance criteria

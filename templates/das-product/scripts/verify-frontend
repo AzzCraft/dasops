@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "TODO: implement frontend verify gates" 
+./scripts/verify

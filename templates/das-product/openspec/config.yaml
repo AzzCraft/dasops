@@ -1,0 +1,11 @@
+schema: das-standard
+
+context: |
+  Governance standard: DAS Standard (docs/standards/DAS_STANDARD.md)
+  Canonical docs:
+    - docs/master_doc.md
+    - docs/ui_spec.md
+
+  Workflow:
+    - Use openspec/changes/<change-id>/ for change folders
+    - Generated artifacts must align to DAS: Master Doc Delta, Contracts Plan, Verification Plan, Tasks

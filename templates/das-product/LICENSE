@@ -1,0 +1,10 @@
+UNLICENSED (template default)
+
+This repository scaffold is intended to become **your product repository**.
+
+Before publishing or distributing this repo, replace this file with the license
+that matches your distribution model (or remove it if the repo is private).
+
+Notes:
+- Tooling repos (dasops / cadence / etc.) have their own licenses.
+- Your product repo license is your decision.

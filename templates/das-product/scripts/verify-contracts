@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "TODO: implement contracts verify gates (schema validation, fixtures, compatibility)" 
+./scripts/verify

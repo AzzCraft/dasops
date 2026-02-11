@@ -1,0 +1,122 @@
+import tempfile
+from pathlib import Path
+
+import subprocess
+
+import streamlit as st
+
+from dasops.scaffold import create_product_repo
+
+
+def _write_temp_bytes(label: str, data: bytes) -> Path:
+    """Persist Streamlit uploaded bytes to a temp file and return its path."""
+    tmp = tempfile.NamedTemporaryFile(delete=False, prefix="dasops_", suffix=f"_{label}.md")
+    tmp.write(data)
+    tmp.flush()
+    tmp.close()
+    return Path(tmp.name)
+
+
+def main() -> None:
+    st.set_page_config(page_title="DAS + OpenSpec Factory", layout="centered")
+    st.title("DAS + OpenSpec Factory")
+
+    st.markdown(
+        """
+This GUI creates a **new product repository** in a separate folder.
+
+- **Factory repo (this repo)** = tooling + GUI + templates
+- **Product repo (generated)** = where your AI workers build the software
+
+Recommended:
+
+- Put product repos under `~/projects/`
+- Keep the factory under `~/tools/`
+
+This physical isolation prevents AI agents from accidentally running/modifying the factory GUI instead of your product.
+"""
+    )
+
+    factory_root = Path(__file__).resolve().parents[1]
+
+    default_dest = str(Path.home() / "projects" / "my-product")
+    dest = st.text_input("Product repo output directory", value=default_dest)
+
+    st.subheader("Input documents")
+    master_file = st.file_uploader("Master Doc (master_doc.md)", type=["md", "markdown"])
+    ui_file = st.file_uploader("UI Spec (ui_spec.md)", type=["md", "markdown"])
+
+    st.subheader("Optional: create an initial change folder")
+    change_id = st.text_input("Initial change id", value="initial")
+    intent = st.text_input("Intent", value="Initial bootstrap")
+    change_empty = st.checkbox(
+        "OPSX mode: create EMPTY change folder (do NOT pre-create artifacts)",
+        value=False,
+        help="Use this when you want OpenSpec OPSX / IDE agent to generate artifacts from templates on demand.",
+    )
+
+    st.subheader("Options")
+    init_git = st.checkbox("Initialize git repo (git init)", value=True)
+    overwrite = st.checkbox("Overwrite non-empty destination (DANGEROUS)", value=False)
+    allow_inside_factory = st.checkbox(
+        "Advanced: allow creating product repo inside the factory folder (NOT recommended)",
+        value=False,
+    )
+
+    st.subheader("Optional: vendor Cadence")
+    install_cadence = st.checkbox("Install Cadence under vendor/cadence", value=False)
+    cadence_mode = st.selectbox("Cadence install mode", options=["submodule", "clone", "copy"], index=0)
+    cadence_source = st.text_input("Cadence source", value="")
+
+    if st.button("Create product repo"):
+        if not dest.strip():
+            st.error("Please provide a destination directory.")
+            return
+        if master_file is None or ui_file is None:
+            st.error("Please upload BOTH master_doc.md and ui_spec.md.")
+            return
+
+        dest_path = Path(dest).expanduser().resolve()
+        if dest_path == factory_root or dest_path.is_relative_to(factory_root):
+            if not allow_inside_factory:
+                st.error(
+                    "Refusing to create a product repo inside the factory repo. "
+                    "Choose a different destination (recommended), or enable the Advanced override checkbox."
+                )
+                return
+
+        master_path = _write_temp_bytes("master_doc", master_file.getvalue())
+        ui_path = _write_temp_bytes("ui_spec", ui_file.getvalue())
+
+        try:
+            out = create_product_repo(
+                factory_root=factory_root,
+                dest_dir=dest_path,
+                master_doc_path=master_path,
+                ui_spec_path=ui_path,
+                change_id=(change_id.strip() or None),
+                intent=intent.strip(),
+                init_git=init_git,
+                overwrite=overwrite,
+                change_empty=change_empty,
+            )
+            st.success(f"Created product repo: {out}")
+            if install_cadence:
+                if not cadence_source.strip():
+                    st.warning("Cadence install was requested, but no Cadence source was provided.")
+                else:
+                    cmd = ["bash", "./scripts/install_cadence_vendor.sh", cadence_mode, cadence_source.strip()]
+                    p = subprocess.run(cmd, cwd=str(out), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    if p.returncode != 0:
+                        st.error("Cadence install failed")
+                        st.code(p.stdout or "", language="bash")
+                    else:
+                        st.success("Cadence installed under vendor/cadence")
+                        st.code(p.stdout or "", language="bash")
+            st.code(f"cd {out}\n./scripts/verify", language="bash")
+        except Exception as e:
+            st.exception(e)
+
+
+if __name__ == "__main__":
+    main()
