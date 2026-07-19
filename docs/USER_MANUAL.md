@@ -37,11 +37,11 @@ Step 1. Install the factory repo
 git clone <FACTORY_REPO_URL> ~/tools/dasops
 cd ~/tools/dasops
 
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 
-pip install -r requirements.txt
-pip install -e .
+python3 -m pip install -r requirements.txt
+python3 -m pip install -e .
 ```
 
 Step 2. Install Codex
@@ -86,17 +86,7 @@ You need two input documents.
 - `master_doc.md`
 - `ui_spec.md`
 
-Option A. GUI creation
-
-```
-cd ~/tools/dasops
-pip install -r requirements-gui.txt
-streamlit run gui/app.py
-```
-
-Upload the two documents, choose an output folder under `~/projects/`, and click Create.
-
-Option B. CLI creation
+CLI creation
 
 ```
 dasops create \
@@ -132,6 +122,26 @@ The only allowed paths are:
   - `openspec/changes/<change-id>/task_locks/<task-id>.lock`
 
 If any new `tasks.md` appears outside these folders, treat it as a failure.
+
+Lock files are structured YAML. Inspect them through the CLI instead of grepping raw text:
+
+```
+dasops lock-status --change-id <change-id> --task-id T-001 --json
+```
+
+Section 3.5. Machine-readable standard lookup
+
+Use the machine-readable indexes from `das-standard` instead of searching the full spec manually.
+
+```bash
+dasops standards search --query "closure"
+dasops standards show --clause cl-2.5
+dasops standards pack --for backend
+```
+
+These commands consume `chapter_index.json` and `clause_index.json` from the sibling `das-standard` repo.
+Inside the standalone `DAS_TOOLS_v1_0_0` release package, standards commands use only the package-local `DAS_TOOLS_v1_0_0/das-standard` directory by default.
+Pass `--standard-root /path/to/das-standard` only when you intentionally want an explicit DAS Standard override.
 
 Section 4. Orchestrator workflow
 
@@ -185,7 +195,16 @@ Workers implement only the tasks assigned to them.
 
 Step 1. Start a task
 
-The safest intern flow is a single command.
+Pick the coordination mode from `tasks.md`.
+
+Pull mode:
+
+```
+export DASOPS_OWNER=worker01
+dasops claim-ready --change-id add-login
+```
+
+Push mode:
 
 ```
 export DASOPS_OWNER=worker01
@@ -260,17 +279,27 @@ Cadence provides deterministic verification and evidence artifacts.
 
 Step 1. Vendor Cadence
 
-Use a submodule when working in a team.
+Preferred when you already have a DAS Suite checkout:
 
 ```
-./scripts/install_cadence_vendor.sh submodule https://github.com/<org>/cadence.git
+./scripts/install_cadence_vendor.sh --from-suite /path/to/das-suite --tier oss
 ```
+
+Or clone from a Git base:
+
+```
+./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>
+```
+
+Clone mode is fail-closed: pass `--git-base`, `--org`, or set
+`DAS_SUITE_GIT_BASE`.
 
 Step 2. Verify Cadence itself
 
 ```
-cd vendor/cadence
-bash ./verify_all.sh
+cd vendor/cadence/cadence-oss
+bash ./scripts/verify
+bash vendor/cadence/cadence-oss/scripts/verify
 ```
 
 Step 3. Run Cadence on the product repo
@@ -282,6 +311,8 @@ From the product repo root:
 ```
 ./cadencew verify --profile dev
 ```
+
+Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof.
 
 If Cadence is vendored under `vendor/cadence`, `./scripts/verify` also runs this Cadence gate.
 
@@ -306,3 +337,26 @@ If you see a stray `tasks.md`
 - Move content into `openspec/changes/<change-id>/tasks.md`
 - Delete the stray file
 - Run `./scripts/verify`
+
+Health check and quick diagnostics:
+
+```
+dasops doctor
+dasops start-task --change-id <change-id> --task-id <task-id>
+```
+
+Sub-system verification scripts:
+
+```
+scripts/verify-backend
+scripts/verify-frontend
+```
+
+For frontend repos, `scripts/verify-frontend` is the visual regression gate.
+It should behave like a baseline ratchet: no visual regression is silently
+introduced, and any `visualMatrix` dimensions used by the frontend verifier
+should stay aligned with the repo's checked-in evidence, docs, and governed
+contract at `templates/das-product/openspec/schemas/das-standard/visual_matrix.schema.json`.
+The standard template runtime expects `artifacts/frontend/visualMatrix.json`
+to match that schema,
+`artifacts/frontend/baseline/`, and `artifacts/frontend/screenshots/`.

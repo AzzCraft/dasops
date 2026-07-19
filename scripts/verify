@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+export PYTHONDONTWRITEBYTECODE=1
+
+if [[ "${1:-}" == "--standalone" ]]; then
+  shift
+  if [[ $# -ne 0 ]]; then
+    echo "Usage: scripts/verify [--standalone]" >&2
+    exit 2
+  fi
+  python3 -m compileall -q dasops
+  python3 -m dasops --help >/dev/null
+  python3 -m unittest tests.test_adopt tests.test_locks tests.test_tasks tests.test_repo_factory
+  exit 0
+fi
+
+if [[ $# -ne 0 ]]; then
+  echo "Usage: scripts/verify [--standalone]" >&2
+  exit 2
+fi
+
+python3 -m dasops --help >/dev/null
+python3 -m dasops doctor --help >/dev/null
+python3 -m dasops audit --help >/dev/null
+python3 -m dasops standards search --help >/dev/null
+python3 -m dasops standards show --help >/dev/null
+python3 -m dasops standards pack --help >/dev/null
+python3 -m dasops template-audit --help >/dev/null
+python3 -m dasops prompt --help >/dev/null
+python3 -m dasops create --help >/dev/null
+python3 -m dasops lock-status --help >/dev/null
+
+python3 -m dasops template-audit --repo-root "$ROOT" --json >/dev/null
+python3 -m unittest discover -s tests -p 'test_*.py'
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+root = Path.cwd()
+legacy_baseline = "unified" + "-current-baseline"
+legacy_enterprise = "cadence-forge" + "-enterprise"
+legacy_installer = "submodule " + "https://github.com/<org>/cadence.git"
+legacy_python_launcher = re.compile(r"(?<![A-Za-z0-9_])python -m(?: pip)?\b")
+
+problems = []
+governed_launcher_surfaces = {
+    Path("README.md"),
+    Path("docs/USER_MANUAL.md"),
+    Path("templates/das-product/README.md"),
+    Path("Makefile"),
+}
+
+for path in root.rglob("*"):
+    if ".git" in path.parts or not path.is_file():
+        continue
+    rel = path.relative_to(root)
+    if rel.as_posix().endswith("docs/standards/DAS_STANDARD.md"):
+        problems.append(f"copied standard doc remains: {rel}")
+        continue
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        continue
+    if legacy_baseline in text:
+        problems.append(f"legacy baseline reference remains: {rel}")
+    if legacy_enterprise in text:
+        problems.append(f"legacy enterprise path remains: {rel}")
+    if legacy_installer in text:
+        problems.append(f"legacy installer usage remains: {rel}")
+    if rel in governed_launcher_surfaces and legacy_python_launcher.search(text):
+        problems.append(f"bare python launcher remains in governed surface: {rel}")
+
+if problems:
+    print("\n".join(problems), file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+mapfile -t RESIDUE < <(find "$ROOT" -path '*/.git' -prune -o \( -type d -name '__pycache__' -o -type f \( -name '*.pyc' -o -name '.DS_Store' \) \) -print)
+if ((${#RESIDUE[@]})); then
+  printf 'forbidden generated residue found:\n' >&2
+  printf '%s\n' "${RESIDUE[@]}" >&2
+  exit 1
+fi

@@ -5,7 +5,7 @@ These prompt templates are the default starting point for:
 - Orchestrator work in the Codex IDE extension
 - Worker runs in Codex CLI non-interactive mode
 
-Files in this folder are part of the product repo scaffold. Keep them stable and versioned.
+Files in this folder are part of the product repo generation contract. Keep them stable and versioned.
 
 Recommended usage:
 

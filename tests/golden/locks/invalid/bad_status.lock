@@ -1,0 +1,9 @@
+version: 2
+taskId: T-021
+owner: worker-bad
+status: RUNNING
+claimedAt: "2026-04-12T00:00:00+00:00"
+updatedAt: "2026-04-12T00:05:00+00:00"
+heartbeatAt: "2026-04-12T00:05:00+00:00"
+leaseSeconds: 3600
+lockToken: "bad-status"

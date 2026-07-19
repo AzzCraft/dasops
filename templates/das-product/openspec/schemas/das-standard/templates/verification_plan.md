@@ -25,4 +25,7 @@ List exact commands that must pass.
 
 ## Evidence required in PR
 - Links to logs / screenshots:
+- `artifacts/frontend/visualMatrix.json` for frontend visual-diff decisions, matching `openspec/schemas/das-standard/visual_matrix.schema.json`
+- `artifacts/frontend/baseline/` for baseline ratchet inputs
+- `artifacts/frontend/screenshots/` for reviewed UI captures
 - Test output excerpts:

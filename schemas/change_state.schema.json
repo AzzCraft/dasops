@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azzcraft.com/schemas/change_state.schema.json",
+  "title": "Change Container State",
+  "description": "DAS-03-010 — finite state machine for change containers in dasops.",
+  "type": "object",
+  "required": ["changeId", "state", "createdAt", "updatedAt", "history"],
+  "additionalProperties": false,
+  "properties": {
+    "changeId": {"type": "string", "pattern": "^chg-[a-z0-9-]{4,64}$"},
+    "title": {"type": "string"},
+    "owner": {"type": "string"},
+    "state": {
+      "type": "string",
+      "enum": ["draft", "ready", "inProgress", "blocked", "done", "verified", "rolledBack"]
+    },
+    "blockedReason": {"type": "string"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "updatedAt": {"type": "string", "format": "date-time"},
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "at"],
+        "additionalProperties": false,
+        "properties": {
+          "from": {"type": "string"},
+          "to": {"type": "string"},
+          "at": {"type": "string", "format": "date-time"},
+          "actor": {"type": "string"},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "evidenceBundleId": {"type": "string"}
+  }
+}

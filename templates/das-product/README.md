@@ -7,7 +7,9 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 - **DAS-aligned docs**
   - `docs/master_doc.md` (canonical requirements + topology + contracts + verify gates)
   - `docs/ui_spec.md` (workflow + screen/state spec)
-  - `docs/standards/DAS_STANDARD.md` (reference standard)
+  - `STANDARD_REF.md` (canonical standard reference)
+  - `tooling_lock.json` (repo-local toolchain and runtime pin)
+  - `local_extension_manifest.json` (registered local deviations/extensions)
 
 - **OpenSpec change workflow (OPSX-style)**
   - `openspec/changes/<change-id>/` holds change-scoped artifacts:
@@ -19,7 +21,9 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 
 - **Verification gates**
   - `./scripts/verify` (minimum checks; expand per repo)
-  - `./scripts/verify-backend`, `./scripts/verify-frontend`, `./scripts/verify-contracts` (placeholders)
+  - `./scripts/verify-backend`, `./scripts/verify-contracts` (fail-closed gates until repo-specific evidence exists)
+  - `./scripts/verify-frontend` (real fail-closed visual regression gate requiring `artifacts/frontend/visualMatrix.json` to match `openspec/schemas/das-standard/visual_matrix.schema.json`, plus `artifacts/frontend/baseline/` and `artifacts/frontend/screenshots/`)
+  - Frontend repos should treat `./scripts/verify-frontend` as the visual regression and baseline ratchet gate.
 
 - **Agent governance**
   - `docs/policies/AGENT_OPERATING_MODEL.md`
@@ -34,7 +38,9 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 - **Cadence integration hooks**
   - `cadence.yaml`
   - `cadencew`
-  - `./scripts/install_cadence_vendor.sh` (optional)
+  - `./scripts/install_cadence_vendor.sh --from-suite <release-root>/das-suite --tier oss` (optional; copies the public sibling `cadence-oss` module)
+  - `./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>` (optional clone mode; fail-closed unless you pass `--git-base`, `--org`, or set `DAS_SUITE_GIT_BASE`)
+  - Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof.
 
 ## Start here
 
@@ -44,13 +50,20 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 
 ```bash
 # Example
-python -m pip install -U pip
+python3 -m pip install -U pip
 # If you installed dasops via the factory repo:
 dasops new-change --id add-feature-x --intent "Add feature X"
 ```
 
 4. Before a Worker starts coding, claim the task (anti-collision lock):
 
+Pull mode:
+
+```bash
+dasops claim-ready --change-id <change-id> --owner worker01
+```
+
+Push mode:
 
 ```bash
 dasops start-task --change-id <change-id> --task-id T-001 --owner worker01
@@ -66,3 +79,4 @@ Then run the Worker loop:
 
 - Keep `main` protected. Merge via PRs only.
 - Treat contracts and verify gates as non-negotiable release safety rails.
+- Run `dasops doctor` to check repo health before starting work.

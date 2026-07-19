@@ -1,0 +1,9 @@
+version: 2
+taskId: T-020
+owner: worker-neg
+status: IN_PROGRESS
+claimedAt: "2026-04-12T00:00:00+00:00"
+updatedAt: "2026-04-12T00:05:00+00:00"
+heartbeatAt: "2026-04-12T00:05:00+00:00"
+leaseSeconds: -1
+lockToken: "bad-lease"

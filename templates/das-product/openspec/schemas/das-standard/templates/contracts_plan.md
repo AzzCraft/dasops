@@ -8,7 +8,7 @@ List all cross-boundary interfaces affected by this change.
 
 | Surface | Type (API/Event/Persisted) | Owner | Compatibility mode | Change class |
 |---|---|---|---|---|
-| TBD | TBD | TBD | TBD | Additive / Behavioral / Breaking |
+| productStatus | Event | product-team | backward-compatible | Additive |
 
 ## Casing + serialization rules
 - Serialized fields MUST be `camelCase`.
@@ -24,7 +24,7 @@ For each contract, specify fixtures to add/update.
 
 | Contract | Fixture path | Description |
 |---|---|---|
-| TBD | contracts/fixtures/... | TBD |
+| productStatus | contracts/fixtures/product_status/basic.json | Valid product status event payload |
 
 ## Migration / compatibility strategy
 - Tolerant reader plan:
