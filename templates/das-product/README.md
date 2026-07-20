@@ -8,8 +8,6 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
   - `docs/master_doc.md` (canonical requirements + topology + contracts + verify gates)
   - `docs/ui_spec.md` (workflow + screen/state spec)
   - `STANDARD_REF.md` (canonical standard reference)
-  - `tooling_lock.json` (repo-local toolchain and runtime pin)
-  - `local_extension_manifest.json` (registered local deviations/extensions)
 
 - **OpenSpec change workflow (OPSX-style)**
   - `openspec/changes/<change-id>/` holds change-scoped artifacts:
@@ -34,13 +32,6 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 - **Prompt templates**
   - `prompts/orchestrator.md`
   - `prompts/worker.md`
-
-- **Cadence integration hooks**
-  - `cadence.yaml`
-  - `cadencew`
-  - `./scripts/install_cadence_vendor.sh --from-suite <release-root>/das-suite --tier oss` (optional; copies the public sibling `cadence-oss` module)
-  - `./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>` (optional clone mode; fail-closed unless you pass `--git-base`, `--org`, or set `DAS_SUITE_GIT_BASE`)
-  - Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof.
 
 ## Start here
 
@@ -80,3 +71,5 @@ Then run the Worker loop:
 - Keep `main` protected. Merge via PRs only.
 - Treat contracts and verify gates as non-negotiable release safety rails.
 - Run `dasops doctor` to check repo health before starting work.
+- This v1.0 scaffold is standalone. Add Cadence/suite integration only after
+  your owner has supplied a complete, immutable, schema-valid closure.

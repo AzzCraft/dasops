@@ -1,15 +1,10 @@
-# DAS Tools v1.0.0 Threat Model
+# dasops v1.0 Threat Model
 
-This threat model covers the CLI, private control plane, plugin/MCP integrations, CI templates, airgap installer, evidence storage, update channel, and support bundle workflow.
+The public release covers the local Python CLI and its generated template.
+Primary risks are malicious or malformed repository input, concurrent task
+claims, and accidental disclosure through committed artifacts. Mitigations are
+path validation, fail-closed verification, exclusive task-lock creation,
+atomic file replacement, and source-boundary scans.
 
-## STRIDE Coverage
-
-| Area | Spoofing | Tampering | Repudiation | Information disclosure | Denial of service | Elevation of privilege |
-| --- | --- | --- | --- | --- | --- | --- |
-| CLI and local verifier | Signed closure and release metadata | Canonical hashes and EvidenceBundle verification | Local audit event IDs | Redaction policy for logs and support | Offline mode and bounded replay | No shell execution through MCP read tools |
-| Control plane | Signed license and OIDC SSO | Append-only audit chain | Tenant-scoped audit export | Support bundle redaction | Rate limits and quota ledger | RBAC policy and approval gates |
-| Plugins and MCP | Signed plugin manifests | Registry trust index and revocation | Every tool call emits an audit event | SecretStorage and no plaintext token logging | Per-tool timeout and sandbox profile | Write tools require simulation, approval, and lock token |
-| CI and release | SLSA provenance and artifact signatures | SHA256SUMS and release truth pack | CI logs attached to evidence index | SBOM and notices omit customer data | Hermetic fixtures and mirror mode | Release jobs run least-privilege tokens |
-| Airgap and updates | TUF root and target roles | Snapshot and timestamp metadata | Installer audit log | No outbound telemetry by default | Offline retryable installer stages | KMS or Vault for release keys |
-
-The release gate fails closed when signatures, provenance, license policy, audit chain, evidence index, or task coverage checks do not pass.
+Network services, control planes, plugins, customer support systems, update
+channels, and remote key management are outside this release's scope.

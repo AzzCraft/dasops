@@ -1,6 +1,0 @@
-projectId: dasops-product
-mode: strict_offline
-policies:
-  - core-v140-baseline
-ui:
-  enabled: false

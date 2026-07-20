@@ -41,7 +41,8 @@ class TestCreateAndVerify(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, f"create failed: {result.stdout}\n{result.stderr}")
             self.assertTrue(dest.exists())
-            self.assertTrue((dest / "cadence.yaml").exists() or (dest / "cadence.yml").exists())
+            self.assertTrue((dest / "STANDARD_REF.md").exists())
+            self.assertFalse((dest / "cadence.yaml").exists())
 
 
 class TestDoctorOnFactory(unittest.TestCase):

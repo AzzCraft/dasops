@@ -14,9 +14,8 @@ class TestAuditRepo(unittest.TestCase):
     def test_empty_repo_finds_all_missing(self):
         with TemporaryDirectory() as tmp:
             result = audit_repo(Path(tmp))
-            # Should report every REQUIRED_PATHS entry + cadence config missing
+            # A standalone DAS/OpenSpec baseline reports every required path.
             self.assertGreaterEqual(len(result.findings), len(REQUIRED_PATHS))
-            self.assertTrue(any("cadence.yaml" in f for f in result.findings))
 
     def test_compliant_repo_has_no_findings(self):
         with TemporaryDirectory() as tmp:
@@ -28,7 +27,6 @@ class TestAuditRepo(unittest.TestCase):
                 else:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text("")
-            (root / "cadence.yaml").write_text("")
             result = audit_repo(root)
             self.assertEqual(result.findings, [])
 
@@ -39,32 +37,30 @@ class TestAuditRepo(unittest.TestCase):
                 target = root / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("")  # everything as file
-            (root / "cadence.yaml").write_text("")
             result = audit_repo(root)
             self.assertTrue(any("must be a directory" in f for f in result.findings))
 
 
 class TestNormalizeRepo(unittest.TestCase):
-    def test_does_not_synthesize_compliance_files(self):
+    def test_seeds_only_safe_baseline_files_without_overwriting_user_content(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "cadence.yaml").write_text("")
+            (root / "README.md").write_text("# Owner README\n", encoding="utf-8")
             result = normalize_repo(root)
             self.assertGreater(len(result.findings), 0)
-            self.assertEqual(result.repaired, ["created openspec/changes directory"])
-            for rel in REQUIRED_PATHS:
-                if rel == "openspec/changes":
-                    self.assertTrue((root / rel).is_dir())
-                else:
-                    self.assertFalse((root / rel).exists(), f"{rel} must require user-authored content")
+            self.assertIn("created openspec/changes directory", result.repaired)
+            self.assertIn("created scripts/verify", result.repaired)
+            self.assertEqual((root / "README.md").read_text(encoding="utf-8"), "# Owner README\n")
+            self.assertIn("UNLICENSED", (root / "LICENSE").read_text(encoding="utf-8"))
 
-    def test_does_not_create_a_noop_verify_script(self):
+    def test_creates_a_fail_closed_verify_script(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "cadence.yaml").write_text("")
             normalize_repo(root)
             verify = root / "scripts" / "verify"
-            self.assertFalse(verify.exists())
+            self.assertTrue(verify.exists())
+            self.assertTrue(verify.stat().st_mode & 0o111)
+            self.assertIn("missing required artifact", verify.read_text(encoding="utf-8"))
 
 
 class TestRepairDocLinks(unittest.TestCase):

@@ -5,22 +5,25 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PYTHONDONTWRITEBYTECODE=1
 
-if [[ "${1:-}" == "--standalone" ]]; then
-  shift
-  if [[ $# -ne 0 ]]; then
-    echo "Usage: scripts/verify [--standalone]" >&2
+MODE="full"
+case "${1:-}" in
+  ""|--full|--standalone)
+    ;;
+  --fast)
+    MODE="fast"
+    ;;
+  *)
+    echo "Usage: scripts/verify [--fast|--full|--standalone]" >&2
     exit 2
-  fi
-  python3 -m compileall -q dasops
-  python3 -m dasops --help >/dev/null
-  python3 -m unittest tests.test_adopt tests.test_locks tests.test_tasks tests.test_repo_factory
-  exit 0
-fi
-
-if [[ $# -ne 0 ]]; then
-  echo "Usage: scripts/verify [--standalone]" >&2
+    ;;
+esac
+if [[ $# -gt 1 ]]; then
+  echo "Usage: scripts/verify [--fast|--full|--standalone]" >&2
   exit 2
 fi
+
+SOURCE_ID="$(git -C "$ROOT" rev-parse --verify HEAD 2>/dev/null || printf '%s' archive)"
+printf '%s\n' "mode=$MODE dasopsVersion=$(tr -d '[:space:]' < VERSION) dasStandardVersion=1.4.0 source=$SOURCE_ID python=$(python3 --version 2>&1)"
 
 python3 -m dasops --help >/dev/null
 python3 -m dasops doctor --help >/dev/null
@@ -34,7 +37,7 @@ python3 -m dasops create --help >/dev/null
 python3 -m dasops lock-status --help >/dev/null
 
 python3 -m dasops template-audit --repo-root "$ROOT" --json >/dev/null
-python3 -m unittest discover -s tests -p 'test_*.py'
+python3 -m pytest -q -p no:cacheprovider tests
 
 python3 - <<'PY'
 from pathlib import Path
@@ -59,6 +62,11 @@ for path in root.rglob("*"):
     if ".git" in path.parts or not path.is_file():
         continue
     rel = path.relative_to(root)
+    # Tests may name a forbidden pattern in order to assert its absence. The
+    # published application, documentation, and template surfaces are what
+    # this release-boundary gate evaluates.
+    if rel.parts and rel.parts[0] == "tests":
+        continue
     if rel.as_posix().endswith("docs/standards/DAS_STANDARD.md"):
         problems.append(f"copied standard doc remains: {rel}")
         continue
@@ -80,9 +88,16 @@ if problems:
     raise SystemExit(1)
 PY
 
-mapfile -t RESIDUE < <(find "$ROOT" -path '*/.git' -prune -o \( -type d -name '__pycache__' -o -type f \( -name '*.pyc' -o -name '.DS_Store' \) \) -print)
-if ((${#RESIDUE[@]})); then
-  printf 'forbidden generated residue found:\n' >&2
-  printf '%s\n' "${RESIDUE[@]}" >&2
+RESIDUE_FOUND=0
+while IFS= read -r residue; do
+  if [[ "$RESIDUE_FOUND" -eq 0 ]]; then
+    printf 'forbidden generated residue found:\n' >&2
+    RESIDUE_FOUND=1
+  fi
+  printf '%s\n' "$residue" >&2
+done < <(find "$ROOT" -path '*/.git' -prune -o \( -type d -name '__pycache__' -o -type f \( -name '*.pyc' -o -name '.DS_Store' \) \) -print)
+if [[ "$RESIDUE_FOUND" -ne 0 ]]; then
   exit 1
 fi
+
+echo "[dasops] $MODE verification OK"

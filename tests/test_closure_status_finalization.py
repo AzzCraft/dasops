@@ -5,12 +5,26 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from tests._root_contract import repository_root_for_test_file
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = repository_root_for_test_file(__file__)
 CHANGE_ID = "v10-6-commercial-ga-closure"
 CHANGE_REL = Path("openspec") / "changes" / CHANGE_ID
 SCHEMA_REL = Path("openspec") / "schemas" / "das-standard" / "schema.yaml"
+TEMPLATE_SCHEMA_REL = Path("templates") / "das-product" / SCHEMA_REL
+
+COMPLETE_ARTIFACTS = {
+    "master_doc_delta.md": "# Master document delta\n\nComplete.\n",
+    "contracts_plan.md": "# Contracts plan\n\nComplete.\n",
+    "verification_plan.md": "# Verification plan\n\nComplete.\n",
+    "tasks.md": (
+        "# Tasks\n\n"
+        "| Task ID | Title | Owner | Status | Depends on | Verify gate |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| T-040 | Complete fixture | worker-1 | DONE | - | `bash scripts/verify` |\n"
+    ),
+}
 
 
 def _write_fixture_repo(tmp_path: Path, *, complete_tasks: bool) -> Path:
@@ -19,10 +33,12 @@ def _write_fixture_repo(tmp_path: Path, *, complete_tasks: bool) -> Path:
     schema_path = repo / SCHEMA_REL
     change_dir.mkdir(parents=True)
     schema_path.parent.mkdir(parents=True)
-    schema_path.write_text((REPO_ROOT / SCHEMA_REL).read_text(encoding="utf-8"), encoding="utf-8")
+    schema_path.write_text(
+        (REPO_ROOT / TEMPLATE_SCHEMA_REL).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
-    for name in ("contracts_plan.md", "master_doc_delta.md", "verification_plan.md", "tasks.md"):
-        text = (REPO_ROOT / CHANGE_REL / name).read_text(encoding="utf-8")
+    for name, text in COMPLETE_ARTIFACTS.items():
         if name == "tasks.md":
             text = _mark_all_tasks_done(text)
             if not complete_tasks:
@@ -72,7 +88,7 @@ def _set_task_status(tasks_md: str, task_id: str, owner: str, status: str) -> st
 
 def _run_status(repo: Path) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(REPO_ROOT / "dasops")
+    env["PYTHONPATH"] = str(REPO_ROOT)
     return subprocess.run(
         [sys.executable, "-m", "dasops", "status", "--id", CHANGE_ID],
         cwd=repo,

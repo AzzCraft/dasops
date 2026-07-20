@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+from tests._root_contract import repository_root_for_test_file
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DASOPS_ROOT = REPO_ROOT / "dasops"
+REPO_ROOT = repository_root_for_test_file(__file__)
+DASOPS_ROOT = REPO_ROOT
 
 
 def _run(
@@ -57,14 +59,24 @@ def _write_product_inputs(root: Path) -> tuple[Path, Path]:
 
 def _build_and_install_wheel(tmp_path: Path) -> tuple[list[str], dict[str, str]]:
     wheelhouse = tmp_path / "wheelhouse"
-    proc = _run([sys.executable, "-m", "pip", "wheel", ".", "--no-deps", "-w", str(wheelhouse)], cwd=DASOPS_ROOT)
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    wheels = sorted(wheelhouse.glob("dasops-*.whl"))
-    assert wheels, "OPS-001 did not build a dasops wheel"
-    target = tmp_path / "wheel-install"
-    proc = _run([sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(target), str(wheels[0])], cwd=tmp_path)
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    return [sys.executable, "-m", "dasops"], _pythonpath(target)
+    try:
+        proc = _run(
+            [sys.executable, "-m", "pip", "wheel", ".", "--no-deps", "--no-build-isolation", "-w", str(wheelhouse)],
+            cwd=DASOPS_ROOT,
+        )
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        wheels = sorted(wheelhouse.glob("dasops-*.whl"))
+        assert wheels, "OPS-001 did not build a dasops wheel"
+        target = tmp_path / "wheel-install"
+        proc = _run([sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(target), str(wheels[0])], cwd=tmp_path)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        return [sys.executable, "-m", "dasops"], _pythonpath(target)
+    finally:
+        # Legacy setuptools leaves these ignored paths in the source checkout.
+        # A verifier must leave an export candidate unchanged before it is
+        # archived, even when the wheel command itself fails.
+        for residue in ("build", "dasops.egg-info", "UNKNOWN.egg-info"):
+            shutil.rmtree(DASOPS_ROOT / residue, ignore_errors=True)
 
 
 def test_ops_001_installed_wheel_create_new_change_and_verify_smoke(tmp_path: Path) -> None:

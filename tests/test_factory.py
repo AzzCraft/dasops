@@ -39,11 +39,10 @@ class FactoryTemplateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = self._create_repo(Path(tmp_dir))
             self.assertTrue((repo / "STANDARD_REF.md").exists())
-            self.assertTrue((repo / "tooling_lock.json").exists())
-            self.assertTrue((repo / "local_extension_manifest.json").exists())
+            self.assertFalse((repo / "tooling_lock.json").exists())
+            self.assertFalse((repo / "local_extension_manifest.json").exists())
             self.assertFalse((repo / "docs" / "standards" / "DAS_STANDARD.md").exists())
-            cadence_yaml = (repo / "cadence.yaml").read_text(encoding="utf-8")
-            self.assertIn("core-v140-baseline", cadence_yaml)
+            self.assertFalse((repo / "cadence.yaml").exists())
 
             status = subprocess.run(
                 ["git", "status", "--porcelain"],
@@ -53,14 +52,13 @@ class FactoryTemplateTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(status.stdout, "", "generated repository must be clean")
-            lock = json.loads((repo / "tooling_lock.json").read_text(encoding="utf-8"))
-            pin = lock["sourceOfTruth"]["pinValue"]
-            ancestor = subprocess.run(
-                ["git", "merge-base", "--is-ancestor", pin, "HEAD"],
-                cwd=repo,
-                check=False,
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "rev-list", "--count", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+                ).stdout.strip(),
+                "1",
+                "the standalone scaffold must have one truthful bootstrap commit",
             )
-            self.assertEqual(ancestor.returncode, 0, "tooling lock must bind a bootstrap ancestor")
 
     def test_fail_closed_sub_verifiers_and_structured_locks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

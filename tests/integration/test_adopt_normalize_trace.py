@@ -6,9 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests._root_contract import repository_root_for_test_file
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DASOPS_ROOT = REPO_ROOT / "dasops"
+REPO_ROOT = repository_root_for_test_file(__file__)
+DASOPS_ROOT = REPO_ROOT
 
 
 def _env() -> dict[str, str]:

@@ -21,8 +21,7 @@ jobs:
           python-version: "3.11"
       - name: Install
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pip-audit==2.10.1 bandit==1.9.4
+          python -m pip install -r requirements-verify.txt
           python -m pip install -e .
       - name: Verify
         run: bash ./scripts/verify --standalone

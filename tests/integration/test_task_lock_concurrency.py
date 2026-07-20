@@ -4,14 +4,17 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
+from tests._root_contract import repository_root_for_test_file
+from dasops.locks import claim_task
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DASOPS_ROOT = REPO_ROOT / "dasops"
+REPO_ROOT = repository_root_for_test_file(__file__)
+DASOPS_ROOT = REPO_ROOT
 
 
 def _env() -> dict[str, str]:
@@ -95,6 +98,34 @@ def test_ops_003_competing_claims_produce_single_owner_and_loser_diagnostics(tmp
     assert "worker-b" in output
     lock = yaml.safe_load(_lock_path(tmp_path).read_text(encoding="utf-8"))
     assert lock["owner"] == "worker-a"
+
+
+def test_ops_003_simultaneous_claims_keep_tasks_and_lock_owner_consistent(tmp_path: Path) -> None:
+    _write_change(tmp_path)
+    barrier = threading.Barrier(2)
+    outcomes: list[tuple[str, str]] = []
+
+    def claim(owner: str) -> None:
+        barrier.wait(timeout=10)
+        try:
+            claim_task(repo_root=tmp_path, change_id="lock-smoke", task_id="T-001", owner=owner)
+            outcomes.append((owner, "won"))
+        except SystemExit:
+            outcomes.append((owner, "lost"))
+
+    first = threading.Thread(target=claim, args=("worker-a",))
+    second = threading.Thread(target=claim, args=("worker-b",))
+    first.start()
+    second.start()
+    first.join(timeout=20)
+    second.join(timeout=20)
+
+    winners = [owner for owner, result in outcomes if result == "won"]
+    assert len(winners) == 1, outcomes
+    lock = yaml.safe_load(_lock_path(tmp_path).read_text(encoding="utf-8"))
+    task_text = (tmp_path / "openspec" / "changes" / "lock-smoke" / "tasks.md").read_text(encoding="utf-8")
+    assert lock["owner"] == winners[0]
+    assert f"| T-001 | Lock smoke | {winners[0]} | IN_PROGRESS |" in task_text
 
 
 def test_ops_003_stale_reclaim_rotates_token_and_writes_audit_history(tmp_path: Path) -> None:

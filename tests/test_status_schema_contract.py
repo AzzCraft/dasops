@@ -7,9 +7,10 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from tests._root_contract import repository_root_for_test_file
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = repository_root_for_test_file(__file__)
 CHANGE_ID = "v10-6-commercial-ga-closure"
 SCHEMA_REL = "openspec/schemas/das-standard/schema.yaml"
 STATUS_COMMAND = f"PYTHONPATH=dasops python3 -m dasops status --id {CHANGE_ID}"
@@ -30,7 +31,7 @@ class StatusSchemaContractTests(unittest.TestCase):
             )
 
             env = os.environ.copy()
-            env["PYTHONPATH"] = str(REPO_ROOT / "dasops")
+            env["PYTHONPATH"] = str(REPO_ROOT)
             return subprocess.run(
                 [sys.executable, "-m", "dasops", "status", "--id", CHANGE_ID],
                 cwd=repo,
