@@ -46,7 +46,7 @@ Planning rules
   Task ID | Title | Owner | Status | Depends on | Verify gate
 
 - Task IDs are sequential and stable: `T-001`, `T-002`, `T-003`.
-- Status values are limited to: `TODO`, `IN_PROGRESS`, `DONE`.
+- Status values are limited to: `TODO`, `IN_PROGRESS`, `DONE`, `BLOCKED`, `PROPOSED`.
 - Owners are explicit. Use `-` for unassigned.
 
 ### Dispatch model (push vs pull)
@@ -80,7 +80,7 @@ Required structure for `tasks.md`
 Each task section begins with `### T-001` and includes:
 
 - Owner: `-` or a concrete owner id
-- Status: `TODO` or `IN_PROGRESS` or `DONE`
+- Status: `TODO` or `IN_PROGRESS` or `DONE` or `BLOCKED` or `PROPOSED`
 - Scope: which folders or modules to touch
 - Contracts: which contract files or ids constrain the work
 - Verification: exact verify commands in backticks
@@ -90,6 +90,6 @@ Do not start implementation.
 
 Your job is to produce high quality change artifacts and a precise execution plan.
 
-Placeholders
+Required inputs
 
-- Replace `{{CHANGE_ID}}` with the real change id.
+- Bind `{{CHANGE_ID}}` to the real change id before execution.

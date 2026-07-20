@@ -1,0 +1,31 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install -r requirements-verify.txt
+          python -m pip install -e .
+      - name: Verify
+        run: bash ./scripts/verify --standalone
+      - name: Dependency audit
+        run: pip-audit --progress-spinner off -r requirements.txt
+      - name: High-severity static analysis
+        run: bandit -q -lll -r dasops

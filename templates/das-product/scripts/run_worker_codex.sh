@@ -29,15 +29,6 @@ if [[ ! -f "$LOCK_FILE" ]]; then
   exit 2
 fi
 
-if ! grep -q "^Owner: $OWNER$" "$LOCK_FILE"; then
-  echo "Task lock exists but is not owned by $OWNER" >&2
-  echo "Inspect the lock file:" >&2
-  echo "  cat $LOCK_FILE" >&2
-  exit 2
-fi
-
-OWNER="${OWNER:-worker}"
-
 if ! command -v codex >/dev/null 2>&1; then
   echo "codex CLI not found on PATH" >&2
   echo "Install it first, then re-run." >&2
@@ -48,6 +39,13 @@ if ! command -v dasops >/dev/null 2>&1; then
   echo "dasops not found on PATH" >&2
   echo "Install dasops in your environment, then re-run." >&2
   exit 127
+fi
+
+if ! dasops lock-status --change-id "$CHANGE_ID" --task-id "$TASK_ID" --expect-owner "$OWNER" --json >/dev/null; then
+  echo "Task lock exists but is not owned by $OWNER" >&2
+  echo "Inspect the structured lock:" >&2
+  echo "  dasops lock-status --change-id $CHANGE_ID --task-id $TASK_ID --json" >&2
+  exit 2
 fi
 
 echo "Running Worker loop via Codex CLI"

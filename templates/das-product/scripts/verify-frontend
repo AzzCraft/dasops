@@ -1,4 +1,91 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "TODO: implement frontend verify gates" 
-./scripts/verify
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+bash ./scripts/verify
+
+# fail-closed frontend evidence verifier.
+# governed artifact paths:
+# - artifacts/frontend/visualMatrix.json
+# - artifacts/frontend/baseline/
+# - artifacts/frontend/screenshots/
+# governed schema:
+# - openspec/schemas/das-standard/visual_matrix.schema.json
+python3 - <<'PY'
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+REPO_ROOT = Path.cwd()
+VISUAL_MATRIX_KEYS = ("viewports", "themes", "locales")
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"[FAIL] {message}")
+
+
+def ok(message: str) -> None:
+    print(f"[OK] {message}")
+
+
+def require_non_empty_dir(path: Path, label: str) -> None:
+    if not path.is_dir():
+        fail(f"missing frontend evidence directory: {path.as_posix()}")
+    if not any(path.iterdir()):
+        fail(f"{label} dir must be non-empty: {path.as_posix()}")
+
+
+def load_visual_matrix_schema(path: Path) -> None:
+    if not path.is_file():
+        fail(f"missing visualMatrix schema: {path.as_posix()}")
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        fail(f"invalid visualMatrix schema JSON: {exc}")
+
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        fail("visualMatrix schema must declare properties")
+    if schema.get("additionalProperties") is not False:
+        fail("visualMatrix schema must set additionalProperties to false")
+    required = schema.get("required")
+    if required != list(VISUAL_MATRIX_KEYS):
+        fail(f"visualMatrix schema required keys must be {list(VISUAL_MATRIX_KEYS)}")
+    if set(properties) != set(VISUAL_MATRIX_KEYS):
+        fail(f"visualMatrix schema properties must be {list(VISUAL_MATRIX_KEYS)}")
+
+
+def validate_visual_matrix_payload(payload: object) -> None:
+    if not isinstance(payload, dict):
+        fail("visualMatrix payload must be an object")
+    if set(payload) != set(VISUAL_MATRIX_KEYS):
+        fail(f"visualMatrix must contain exactly these keys: {', '.join(VISUAL_MATRIX_KEYS)}")
+    for key in VISUAL_MATRIX_KEYS:
+        values = payload.get(key)
+        if not isinstance(values, list) or not values or any(not isinstance(item, str) or not item.strip() for item in values):
+            fail(f"visualMatrix.{key} must be a non-empty array of strings")
+
+
+visual_matrix = REPO_ROOT / "artifacts" / "frontend" / "visualMatrix.json"
+visual_matrix_schema = REPO_ROOT / "openspec" / "schemas" / "das-standard" / "visual_matrix.schema.json"
+load_visual_matrix_schema(visual_matrix_schema)
+if not visual_matrix.is_file():
+    fail(f"missing frontend evidence file: {visual_matrix.as_posix()}")
+try:
+    payload = json.loads(visual_matrix.read_text(encoding="utf-8"))
+except json.JSONDecodeError as exc:
+    fail(f"invalid visualMatrix.json: {exc}")
+
+validate_visual_matrix_payload(payload)
+
+baseline_dir = REPO_ROOT / "artifacts" / "frontend" / "baseline"
+screenshots_dir = REPO_ROOT / "artifacts" / "frontend" / "screenshots"
+require_non_empty_dir(baseline_dir, "frontend baseline")
+require_non_empty_dir(screenshots_dir, "frontend screenshots")
+
+ok("frontend evidence artifacts are present and non-empty")
+PY

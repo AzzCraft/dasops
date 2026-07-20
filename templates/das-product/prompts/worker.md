@@ -47,6 +47,6 @@ Stop condition
 
 Stop when verify passes and `git status --porcelain` is empty.
 
-Placeholders
+Required inputs
 
-- Replace `{{CHANGE_ID}}`, `{{TASK_ID}}`, and `{{OWNER}}`.
+- Bind `{{CHANGE_ID}}`, `{{TASK_ID}}`, and `{{OWNER}}` to concrete values before execution.

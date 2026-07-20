@@ -50,6 +50,6 @@ These are **override** instructions for AI agents working in this repo.
 - Governance:
   - `docs/policies/AGENT_OPERATING_MODEL.md`
 - DAS Standard:
-  - `docs/standards/DAS_STANDARD.md`
+  - `STANDARD_REF.md`
 - OpenSpec schema used in this repo:
   - `openspec/schemas/das-standard/schema.yaml`

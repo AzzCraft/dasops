@@ -24,6 +24,7 @@ The only allowed paths are:
 - System truth
   - `docs/master_doc.md`
   - `docs/ui_spec.md`
+  - `STANDARD_REF.md`
 - Change truth
   - `openspec/changes/<change-id>/master_doc_delta.md`
   - `openspec/changes/<change-id>/contracts_plan.md`
@@ -86,7 +87,16 @@ Workers implement only the tasks assigned to them.
 
 Step 1. Start a task
 
-The safest intern flow is a single command.
+Pick the coordination mode from `tasks.md`.
+
+Pull mode:
+
+```
+export DASOPS_OWNER=worker01
+dasops claim-ready --change-id add-login
+```
+
+Push mode:
 
 ```
 export DASOPS_OWNER=worker01
@@ -135,28 +145,27 @@ git worktree remove <path>
 git worktree prune
 ```
 
-Section 5. Cadence integration
-
-Cadence provides deterministic verification and evidence artifacts.
-
-Vendor Cadence
+Section 5. Health checks and sub-system verification
 
 ```
-./scripts/install_cadence_vendor.sh submodule https://github.com/<org>/cadence.git
+dasops doctor
+scripts/verify-backend
+scripts/verify-frontend
 ```
 
-Run Cadence on this repo
+`scripts/verify-frontend` is the visual regression gate. Treat it as a
+baseline ratchet: no visual regression is silently introduced, and any
+matrix-based frontend verifier should keep its `visualMatrix` dimensions
+documented alongside the generated evidence and governed by
+`openspec/schemas/das-standard/visual_matrix.schema.json`. The standard
+template verifier expects:
 
-```
-./cadencew verify --profile dev
-```
+- `artifacts/frontend/visualMatrix.json` to match the governed `viewports`,
+  `themes`, and `locales` array contract
+- `artifacts/frontend/baseline/` to exist and contain baseline artifacts
+- `artifacts/frontend/screenshots/` to exist and contain reviewed captures
 
-When Cadence is vendored under `vendor/cadence`, `./scripts/verify` also runs `./cadencew verify --profile dev`.
-
-Evidence output is written to:
-
-`.cadence/out/<run-id>/`
-
-The latest alias is:
-
-`.cadence/out/latest/`
+Cadence/suite integration is intentionally not part of this v1.0 scaffold.
+Do not add a tooling lock, extension manifest, or Cadence configuration until
+the repository owner can provide a complete immutable closure that validates
+against the applicable standard schema.

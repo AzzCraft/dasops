@@ -1,0 +1,9 @@
+version: 2
+taskId: T-022
+owner: worker-time
+status: IN_PROGRESS
+claimedAt: "2026-04-12T00:10:00+00:00"
+updatedAt: "2026-04-12T00:09:00+00:00"
+heartbeatAt: "2026-04-12T00:08:00+00:00"
+leaseSeconds: 3600
+lockToken: "bad-time"

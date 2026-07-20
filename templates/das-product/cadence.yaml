@@ -1,6 +1,0 @@
-projectId: dasops-product
-mode: strict_offline
-policies:
-  - unified-v17-baseline
-ui:
-  enabled: false

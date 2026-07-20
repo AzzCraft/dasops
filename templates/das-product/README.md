@@ -7,7 +7,7 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 - **DAS-aligned docs**
   - `docs/master_doc.md` (canonical requirements + topology + contracts + verify gates)
   - `docs/ui_spec.md` (workflow + screen/state spec)
-  - `docs/standards/DAS_STANDARD.md` (reference standard)
+  - `STANDARD_REF.md` (canonical standard reference)
 
 - **OpenSpec change workflow (OPSX-style)**
   - `openspec/changes/<change-id>/` holds change-scoped artifacts:
@@ -19,7 +19,9 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 
 - **Verification gates**
   - `./scripts/verify` (minimum checks; expand per repo)
-  - `./scripts/verify-backend`, `./scripts/verify-frontend`, `./scripts/verify-contracts` (placeholders)
+  - `./scripts/verify-backend`, `./scripts/verify-contracts` (fail-closed gates until repo-specific evidence exists)
+  - `./scripts/verify-frontend` (real fail-closed visual regression gate requiring `artifacts/frontend/visualMatrix.json` to match `openspec/schemas/das-standard/visual_matrix.schema.json`, plus `artifacts/frontend/baseline/` and `artifacts/frontend/screenshots/`)
+  - Frontend repos should treat `./scripts/verify-frontend` as the visual regression and baseline ratchet gate.
 
 - **Agent governance**
   - `docs/policies/AGENT_OPERATING_MODEL.md`
@@ -31,11 +33,6 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
   - `prompts/orchestrator.md`
   - `prompts/worker.md`
 
-- **Cadence integration hooks**
-  - `cadence.yaml`
-  - `cadencew`
-  - `./scripts/install_cadence_vendor.sh` (optional)
-
 ## Start here
 
 1. Read `docs/USER_MANUAL.md`.
@@ -44,13 +41,20 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 
 ```bash
 # Example
-python -m pip install -U pip
+python3 -m pip install -U pip
 # If you installed dasops via the factory repo:
 dasops new-change --id add-feature-x --intent "Add feature X"
 ```
 
 4. Before a Worker starts coding, claim the task (anti-collision lock):
 
+Pull mode:
+
+```bash
+dasops claim-ready --change-id <change-id> --owner worker01
+```
+
+Push mode:
 
 ```bash
 dasops start-task --change-id <change-id> --task-id T-001 --owner worker01
@@ -66,3 +70,6 @@ Then run the Worker loop:
 
 - Keep `main` protected. Merge via PRs only.
 - Treat contracts and verify gates as non-negotiable release safety rails.
+- Run `dasops doctor` to check repo health before starting work.
+- This v1.0 scaffold is standalone. Add Cadence/suite integration only after
+  your owner has supplied a complete, immutable, schema-valid closure.

@@ -1,0 +1,9 @@
+version: 2
+taskId: T-012
+owner: worker-stale
+status: IN_PROGRESS
+claimedAt: "2020-01-01T00:00:00+00:00"
+updatedAt: "2020-01-01T00:00:01+00:00"
+heartbeatAt: "2020-01-01T00:00:01+00:00"
+leaseSeconds: 60
+lockToken: "stale-token"

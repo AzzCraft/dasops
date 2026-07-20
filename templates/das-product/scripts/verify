@@ -1,9 +1,23 @@
-#!/usr/bin/env python3
-import sys
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export REPO_ROOT
+
+python3 - "$@" <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+import yaml
 
+
+REPO_ROOT = Path(os.environ["REPO_ROOT"]).resolve()
 REQUIRED_FILES = [
     REPO_ROOT / "docs" / "master_doc.md",
     REPO_ROOT / "docs" / "ui_spec.md",
@@ -11,46 +25,65 @@ REQUIRED_FILES = [
     REPO_ROOT / "docs" / "policies" / "AGENT_OPERATING_MODEL.md",
     REPO_ROOT / "AGENTS.override.md",
     REPO_ROOT / "CLAUDE.md",
+    REPO_ROOT / "STANDARD_REF.md",
     REPO_ROOT / "progress.txt",
     REPO_ROOT / "openspec" / "config.yaml",
     REPO_ROOT / "openspec" / "schemas" / "das-standard" / "schema.yaml",
     REPO_ROOT / "prompts" / "orchestrator.md",
     REPO_ROOT / "prompts" / "worker.md",
     REPO_ROOT / "scripts" / "run_worker_codex.sh",
-    REPO_ROOT / "scripts" / "install_cadence_vendor.sh",
-    REPO_ROOT / "cadencew",
-    REPO_ROOT / "cadence.yaml",
-    REPO_ROOT / "vendor" / "README.md",
 ]
 
+LOCK_KEYS = {
+    "version",
+    "taskId",
+    "owner",
+    "status",
+    "claimedAt",
+    "updatedAt",
+    "heartbeatAt",
+    "leaseSeconds",
+    "lockToken",
+}
+TASK_INDEX_HEADER = "| Task ID | Title | Owner | Status | Depends on | Verify gate |"
+TASK_ALLOWED_STATUSES = {"TODO", "IN_PROGRESS", "DONE", "BLOCKED", "PROPOSED"}
 
-def fail(msg: str) -> int:
-    print(f"[FAIL] {msg}")
+
+def fail(message: str) -> int:
+    print(f"[FAIL] {message}")
     return 1
 
 
-def ok(msg: str) -> None:
-    print(f"[OK] {msg}")
+def ok(message: str) -> None:
+    print(f"[OK] {message}")
 
 
 def check_exists() -> int:
     rc = 0
-    for f in REQUIRED_FILES:
-        if not f.exists():
+    for path in REQUIRED_FILES:
+        if not path.exists():
             rc = 1
-            print(f"[MISSING] {f.relative_to(REPO_ROOT)}")
+            print(f"[MISSING] {path.relative_to(REPO_ROOT)}")
         else:
-            ok(f"exists: {f.relative_to(REPO_ROOT)}")
+            ok(f"exists: {path.relative_to(REPO_ROOT)}")
     return rc
 
 
-def check_master_doc_minimum() -> int:
-    """Very lightweight sanity checks.
+def check_seed_contract() -> int:
+    legacy = REPO_ROOT / "docs" / "standards" / "DAS_STANDARD.md"
+    if legacy.exists():
+        return fail("Found copied standard doc. Use STANDARD_REF.md instead.")
 
-    Each real project SHOULD harden these checks (e.g., enforce traceability rows, verify gates, etc.).
-    """
-    p = REPO_ROOT / "docs" / "master_doc.md"
-    text = p.read_text(encoding="utf-8", errors="replace")
+    config_text = (REPO_ROOT / "openspec" / "config.yaml").read_text(encoding="utf-8", errors="replace")
+    if "STANDARD_REF.md" not in config_text:
+        return fail("openspec/config.yaml must reference STANDARD_REF.md")
+
+    ok("seed contract uses STANDARD_REF.md and local DAS/OpenSpec artifacts")
+    return 0
+
+
+def check_master_doc_minimum() -> int:
+    text = (REPO_ROOT / "docs" / "master_doc.md").read_text(encoding="utf-8", errors="replace")
     must_have_any = [
         ["Conformance profile"],
         ["Repo topology", "Topology"],
@@ -59,25 +92,21 @@ def check_master_doc_minimum() -> int:
         ["Verification"],
         ["Execution plan"],
     ]
-    missing = [alts[0] for alts in must_have_any if not any(a in text for a in alts)]
+    missing = [alts[0] for alts in must_have_any if not any(candidate in text for candidate in alts)]
     if missing:
         return fail(f"docs/master_doc.md missing sections: {missing}")
+    # Reject unresolved residue in master_doc
+    for unresolved in ("TBD", "TODO", "PLACEHOLDER", "FIXME"):
+        if unresolved in text:
+            return fail(f"docs/master_doc.md contains unresolved residue: {unresolved!r}")
     ok("master_doc.md contains minimum headings")
     return 0
 
 
 def check_deterministic_layout() -> int:
-    """Enforce stable artifact locations.
-
-    Motivation: many AI tools will "helpfully" create new folders/files with
-    slightly different names. In multi-agent environments, that quickly becomes
-    chaos. This check intentionally prefers false positives over false negatives.
-    """
-    # 1) No stray tasks.md outside openspec/changes/*/tasks.md
     stray_tasks = []
-    for p in REPO_ROOT.rglob("tasks.md"):
-        rel = p.relative_to(REPO_ROOT)
-        # Allow schema templates
+    for path in REPO_ROOT.rglob("tasks.md"):
+        rel = path.relative_to(REPO_ROOT)
         if rel.parts[:2] == ("openspec", "schemas"):
             continue
         if rel.parts[:2] == ("openspec", "changes") and len(rel.parts) == 4 and rel.parts[3] == "tasks.md":
@@ -89,41 +118,115 @@ def check_deterministic_layout() -> int:
             + ", ".join(stray_tasks)
         )
 
-    # 2) No legacy delta folders (we standardize on openspec/changes)
-    legacy = [p for p in [REPO_ROOT / "docs" / "deltas", REPO_ROOT / "docs" / "delta"] if p.exists()]
+    legacy = [path for path in [REPO_ROOT / "docs" / "deltas", REPO_ROOT / "docs" / "delta"] if path.exists()]
     if legacy:
-        rels = [str(p.relative_to(REPO_ROOT)) for p in legacy]
         return fail(
-            "Legacy delta folders detected (use openspec/changes instead): " + ", ".join(rels)
+            "Legacy delta folders detected (use openspec/changes instead): "
+            + ", ".join(str(path.relative_to(REPO_ROOT)) for path in legacy)
         )
 
-    # 3) Each change that has tasks.md must also have a task_locks directory
     changes_dir = REPO_ROOT / "openspec" / "changes"
     if changes_dir.exists():
-        for d in sorted([p for p in changes_dir.iterdir() if p.is_dir()]):
-            tasks = d / "tasks.md"
-            if tasks.exists():
-                lock_dir = d / "task_locks"
-                if not lock_dir.exists():
-                    return fail(f"Missing task lock directory: {lock_dir.relative_to(REPO_ROOT)}")
+        for change_dir in sorted(path for path in changes_dir.iterdir() if path.is_dir()):
+            tasks_md = change_dir / "tasks.md"
+            if tasks_md.exists() and not (change_dir / "task_locks").exists():
+                return fail(f"Missing task lock directory: {(change_dir / 'task_locks').relative_to(REPO_ROOT)}")
 
     ok("deterministic layout checks")
     return 0
 
 
-def check_task_locks_layout() -> int:
+def check_task_lock_schema() -> int:
     changes_dir = REPO_ROOT / "openspec" / "changes"
     if not changes_dir.exists():
         return 0
+    for lock_path in sorted(changes_dir.rglob("*.lock")):
+        data = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return fail(f"Lock is not a YAML object: {lock_path.relative_to(REPO_ROOT)}")
+        missing = sorted(LOCK_KEYS - set(data))
+        if missing:
+            return fail(f"Lock missing required keys {missing}: {lock_path.relative_to(REPO_ROOT)}")
+    ok("structured task lock checks")
+    return 0
 
-    for change_dir in sorted([p for p in changes_dir.iterdir() if p.is_dir()]):
-        tasks_md = change_dir / "tasks.md"
-        if not tasks_md.exists():
-            continue
-        lock_dir = change_dir / "task_locks"
-        if not lock_dir.exists():
-            return fail(f"Missing task_locks for change: {change_dir.name}")
-    ok("task lock folder checks")
+
+def check_tasks_index_contract() -> int:
+    changes_dir = REPO_ROOT / "openspec" / "changes"
+    if not changes_dir.exists():
+        return 0
+    for tasks_md in sorted(changes_dir.glob("*/tasks.md")):
+        lines = tasks_md.read_text(encoding="utf-8", errors="replace").splitlines()
+        if TASK_INDEX_HEADER not in lines:
+            return fail(
+                f"tasks.md missing canonical index header in {tasks_md.relative_to(REPO_ROOT)}"
+            )
+        header_idx = lines.index(TASK_INDEX_HEADER)
+        for raw in lines[header_idx + 2 :]:
+            stripped = raw.strip()
+            if not stripped.startswith("|"):
+                break
+            if re.match(r"^\|\s*-{3,}", stripped):
+                continue
+            parts = [part.strip() for part in stripped.strip("|").split("|")]
+            while len(parts) < 6:
+                parts.append("")
+            task_id, _title, _owner, status, _depends_on, verify_gate = parts[:6]
+            if not task_id:
+                continue
+            if status not in TASK_ALLOWED_STATUSES:
+                return fail(
+                    f"tasks.md row {task_id} has invalid status {status!r} in {tasks_md.relative_to(REPO_ROOT)}"
+                )
+            if "verify" not in verify_gate:
+                return fail(
+                    f"tasks.md row {task_id} missing verify gate command in {tasks_md.relative_to(REPO_ROOT)}"
+                )
+    ok("tasks.md column/status contract checks")
+    return 0
+
+
+def check_stale_lock_semantics() -> int:
+    changes_dir = REPO_ROOT / "openspec" / "changes"
+    if not changes_dir.exists():
+        return 0
+    now = datetime.now(timezone.utc)
+    for lock_path in sorted(changes_dir.rglob("*.lock")):
+        data = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return fail(f"Lock is not a YAML object: {lock_path.relative_to(REPO_ROOT)}")
+
+        lease_seconds = int(data.get("leaseSeconds", 0))
+        if lease_seconds <= 0:
+            return fail(f"Lock leaseSeconds must be > 0: {lock_path.relative_to(REPO_ROOT)}")
+
+        status = str(data.get("status", "")).strip()
+        if status not in TASK_ALLOWED_STATUSES:
+            return fail(f"Lock has invalid status {status!r}: {lock_path.relative_to(REPO_ROOT)}")
+
+        try:
+            claimed = datetime.fromisoformat(str(data.get("claimedAt", "")))
+            updated = datetime.fromisoformat(str(data.get("updatedAt", "")))
+            heartbeat = datetime.fromisoformat(str(data.get("heartbeatAt", "")))
+        except ValueError:
+            return fail(f"Lock has invalid timestamp fields: {lock_path.relative_to(REPO_ROOT)}")
+
+        if claimed.tzinfo is None:
+            claimed = claimed.replace(tzinfo=timezone.utc)
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        if heartbeat.tzinfo is None:
+            heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+
+        if updated < claimed:
+            return fail(f"Lock updatedAt precedes claimedAt: {lock_path.relative_to(REPO_ROOT)}")
+        if heartbeat < claimed:
+            return fail(f"Lock heartbeatAt precedes claimedAt: {lock_path.relative_to(REPO_ROOT)}")
+
+        if status == "IN_PROGRESS" and (now - heartbeat).total_seconds() > lease_seconds:
+            return fail(f"Stale IN_PROGRESS lock detected: {lock_path.relative_to(REPO_ROOT)}")
+
+    ok("stale/reclaim lock lifecycle semantics")
     return 0
 
 
@@ -132,21 +235,12 @@ def main() -> int:
     rc |= check_exists()
     if rc != 0:
         return rc
+    rc |= check_seed_contract()
     rc |= check_deterministic_layout()
-    rc |= check_task_locks_layout()
+    rc |= check_task_lock_schema()
+    rc |= check_tasks_index_contract()
+    rc |= check_stale_lock_semantics()
     rc |= check_master_doc_minimum()
-    # Optional Cadence gate.
-    # If Cadence is vendored under vendor/cadence, run it as an additional deterministic verifier.
-    if rc == 0:
-        cadence_dir = REPO_ROOT / "vendor" / "cadence"
-        cadencew = REPO_ROOT / "cadencew"
-        if cadence_dir.exists() and cadencew.exists():
-            import subprocess
-
-            print("\n[CADENCE] vendor/cadence detected; running cadence verify --profile dev")
-            p = subprocess.run(["./cadencew", "verify", "--profile", "dev"], cwd=str(REPO_ROOT))
-            if p.returncode != 0:
-                return fail("Cadence verify failed")
     if rc == 0:
         print("\nAll verify checks passed.")
     return rc
@@ -154,3 +248,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+PY

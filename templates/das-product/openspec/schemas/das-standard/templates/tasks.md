@@ -30,7 +30,7 @@
 |---|---|---|---|---|---|
 | T-001 | <short title> | - | TODO | - | `./scripts/verify ...` |
 
-Status values: TODO | IN_PROGRESS | DONE
+Status values: TODO | IN_PROGRESS | DONE | BLOCKED | PROPOSED
 
 ## Task details
 

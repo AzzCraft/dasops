@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "taskId": "DAS-03-007",
+  "fixture": "legacy_repo",
+  "expectedAdoptionSteps": ["detect", "map", "write-suite-config"],
+  "verificationCommand": "python3 -m pytest tests/g03/test_real_tools.py"
+}

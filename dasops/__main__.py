@@ -1,13 +1,16 @@
 import argparse
 import json
 import os
+import shlex
 import re
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
-import yaml
-
+from .adopt import adopt_report, audit_repo, audit_report, normalize_report, trace_report
+from .doctor import run_doctor
+from .locks import inspect_lock, is_stale, read_lock, reclaim_lock, renew_lock, lock_path_for
 from .scaffold import (
     claim_ready_task,
     claim_task,
@@ -20,6 +23,8 @@ from .scaffold import (
     read_task_hints,
     release_task,
 )
+from .standards import build_pack, search_indexes, show_clause
+from .template_audit import run_template_audit
 
 
 def _render_prompt(template: str, mapping: dict[str, str]) -> str:
@@ -56,6 +61,75 @@ def _is_git_repo(repo_root: Path) -> bool:
 def _git_current_branch(repo_root: Path) -> str:
     rc, out = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_root)
     return out.strip() if rc == 0 else ""
+
+
+def _strip_task_command(value: str) -> str:
+    match = re.search(r"`([^`]+)`", value or "")
+    if match:
+        return match.group(1).strip()
+    return (value or "").strip()
+
+
+def _final_release_task_number(task_id: str) -> int | None:
+    match = re.fullmatch(r"T-(\d+)", task_id.strip())
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _is_final_release_task(task_id: str) -> bool:
+    number = _final_release_task_number(task_id)
+    return number is not None and number >= 168
+
+
+def _tail(text: str, limit: int = 800) -> str:
+    compact = (text or "").strip()
+    if len(compact) <= limit:
+        return compact
+    return compact[-limit:]
+
+
+def _verify_task_before_completion(repo_root: Path, change_id: str, task_id: str) -> None:
+    if not _is_final_release_task(task_id):
+        return
+
+    command = ""
+    for task in list_tasks(repo_root=repo_root, change_id=change_id):
+        if str(task.get("taskId")) == task_id:
+            command = _strip_task_command(str(task.get("verifyGate", "")))
+            break
+
+    if not command:
+        raise SystemExit(f"{task_id} has no verify gate; refusing to mark DONE.")
+
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env.setdefault("DAS_RELEASE_DONE_SWEEP_NESTED", "1")
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise SystemExit(f"invalid verification command: {exc}") from exc
+    if not argv:
+        raise SystemExit("empty verification command")
+    proc = subprocess.run(
+        argv,
+        cwd=str(repo_root),
+        shell=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=900,
+    )
+    if proc.returncode == 0:
+        return
+
+    detail = _tail(proc.stderr) or _tail(proc.stdout) or "no command output"
+    raise SystemExit(
+        f"{task_id} verify gate failed with exit {proc.returncode}; refusing to mark DONE.\n"
+        f"Command: {command}\n"
+        f"{detail}"
+    )
+
 
 def _resolve_repo_root(cwd: Path) -> Path:
     """Resolve a repo root for file-based commands.
@@ -147,6 +221,17 @@ def _pick_base_branch(repo_root: Path) -> str:
         return "master"
     cur = _git_current_branch(repo_root)
     return cur or "main"
+
+
+def _default_factory_root() -> Path:
+    candidates = [
+        Path(__file__).resolve().parents[1],
+        Path(sys.prefix),
+    ]
+    for candidate in candidates:
+        if (candidate / "templates" / "das-product").is_dir():
+            return candidate
+    return candidates[0]
 
 
 def _fmt_rel(repo_root: Path, p: Path) -> str:
@@ -254,6 +339,60 @@ def main(argv=None) -> int:
         help="Treat warnings as failures (exit 2).",
     )
 
+    p_standards = sub.add_parser(
+        "standards",
+        help="(Factory/workspace) Search and render machine-readable DAS standard indexes",
+    )
+    standards_sub = p_standards.add_subparsers(dest="standards_cmd", required=True)
+
+    p_standards_search = standards_sub.add_parser("search", help="Search standard chapters and clauses")
+    p_standards_search.add_argument("--query", required=True, help="Search text, for example: closure")
+    p_standards_search.add_argument("--standard-root", default=None, help="Optional path to das-standard")
+    p_standards_search.add_argument("--repo-root", default=".", help="Repo root used to resolve workspace siblings")
+    p_standards_search.add_argument("--json", action="store_true")
+
+    p_standards_show = standards_sub.add_parser("show", help="Show one clause from clause_index.json")
+    p_standards_show.add_argument("--clause", required=True, help="Clause id, for example: cl-2.5")
+    p_standards_show.add_argument("--standard-root", default=None, help="Optional path to das-standard")
+    p_standards_show.add_argument("--repo-root", default=".", help="Repo root used to resolve workspace siblings")
+    p_standards_show.add_argument("--json", action="store_true")
+
+    p_standards_pack = standards_sub.add_parser("pack", help="Build a role-oriented reading pack")
+    p_standards_pack.add_argument("--for", dest="role", required=True, help="Role, for example: backend")
+    p_standards_pack.add_argument("--standard-root", default=None, help="Optional path to das-standard")
+    p_standards_pack.add_argument("--repo-root", default=".", help="Repo root used to resolve workspace siblings")
+    p_standards_pack.add_argument("--json", action="store_true")
+
+    p_audit = sub.add_parser(
+        "audit",
+        help="(Product repo) Emit a deterministic audit report for downstream consumers",
+    )
+    p_audit.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_audit.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    p_audit_repo = sub.add_parser("audit-repo", help="Audit a legacy repo before adoption")
+    p_audit_repo.add_argument("path", help="Legacy repo path")
+    p_audit_repo.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    p_adopt_repo = sub.add_parser("adopt-repo", help="Seed missing DAS baseline artifacts into a legacy repo")
+    p_adopt_repo.add_argument("path", help="Legacy repo path")
+    p_adopt_repo.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    p_normalize_repo = sub.add_parser("normalize-repo", help="Normalize a legacy repo and repair known doc links")
+    p_normalize_repo.add_argument("path", help="Legacy repo path")
+    p_normalize_repo.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    p_trace_check = sub.add_parser("trace-check", help="Emit trace relationships for an adopted repo")
+    p_trace_check.add_argument("path", help="Repo path")
+    p_trace_check.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
+    p_template_audit = sub.add_parser(
+        "template-audit",
+        help="(Factory repo) Audit template integrity, structured artifacts, and GUI/CLI parity",
+    )
+    p_template_audit.add_argument("--repo-root", default=".", help="Factory repo root (default: .)")
+    p_template_audit.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+
     p_list = sub.add_parser("list-tasks", help="(Product repo) List tasks for a change (with lock info)")
     p_list.add_argument("--change-id", required=True, help="Change id (folder name)")
     p_list.add_argument("--repo-root", default=".", help="Repo root (default: .)")
@@ -312,6 +451,16 @@ def main(argv=None) -> int:
     p_release.add_argument("--json", action="store_true")
     p_release.add_argument("--repo-root", default=".")
 
+    p_lock = sub.add_parser(
+        "lock-status",
+        help="(Product repo) Inspect a structured task lock and optionally assert owner",
+    )
+    p_lock.add_argument("--change-id", required=True)
+    p_lock.add_argument("--task-id", required=True)
+    p_lock.add_argument("--expect-owner", default=None)
+    p_lock.add_argument("--json", action="store_true")
+    p_lock.add_argument("--repo-root", default=".")
+
     p_start = sub.add_parser(
         "start-task",
         help="(Product repo) Create a feature branch/worktree AND claim the task (best for interns)",
@@ -350,6 +499,38 @@ def main(argv=None) -> int:
     )
     p_prompt.add_argument("--repo-root", default=".")
 
+    p_renew = sub.add_parser(
+        "renew-lock",
+        help="(Product repo) Renew the heartbeat of a task lock",
+    )
+    p_renew.add_argument("--change-id", required=True)
+    p_renew.add_argument("--task-id", required=True)
+    p_renew.add_argument("--owner", required=True)
+    p_renew.add_argument("--lock-token", required=True, help="Lock token from the lock file")
+    p_renew.add_argument("--json", action="store_true")
+    p_renew.add_argument("--repo-root", default=".")
+
+    p_reclaim = sub.add_parser(
+        "reclaim-lock",
+        help="(Product repo) Reclaim a stale lock for a new owner",
+    )
+    p_reclaim.add_argument("--change-id", required=True)
+    p_reclaim.add_argument("--task-id", required=True)
+    p_reclaim.add_argument("--new-owner", required=True)
+    p_reclaim.add_argument("--reason", required=True, help="Reason for reclaim (audit trail)")
+    p_reclaim.add_argument("--force", action="store_true", help="Reclaim even if lock is not stale")
+    p_reclaim.add_argument("--json", action="store_true")
+    p_reclaim.add_argument("--repo-root", default=".")
+
+    p_check_stale = sub.add_parser(
+        "check-stale",
+        help="(Product repo) Check whether a task lock is stale",
+    )
+    p_check_stale.add_argument("--change-id", required=True)
+    p_check_stale.add_argument("--task-id", required=True)
+    p_check_stale.add_argument("--json", action="store_true")
+    p_check_stale.add_argument("--repo-root", default=".")
+
     args = parser.parse_args(argv)
 
     # -----------------------------------------------------------------
@@ -359,7 +540,7 @@ def main(argv=None) -> int:
         factory_root = (
             Path(args.factory_root).expanduser().resolve()
             if args.factory_root
-            else Path(__file__).resolve().parents[1]
+            else _default_factory_root()
         )
         dest = Path(args.dest).expanduser().resolve()
 
@@ -394,7 +575,8 @@ def main(argv=None) -> int:
         return 0
 
     # From here down: product repo commands
-    repo_root = _resolve_repo_root(Path(getattr(args, "repo_root", ".")).expanduser().resolve())
+    raw_repo_root = Path(getattr(args, "repo_root", ".")).expanduser().resolve()
+    repo_root = _resolve_repo_root(raw_repo_root)
 
     # -----------------------------------------------------------------
     # init
@@ -432,100 +614,204 @@ def main(argv=None) -> int:
     # doctor
     # -----------------------------------------------------------------
     if args.cmd == "doctor":
-        problems: list[str] = []
-        warnings: list[str] = []
-
-        # Repo type detection
-        is_product_repo = (repo_root / ".dasops_product_repo").exists()
-        is_factory_repo = (repo_root / ".dasops_factory_repo").exists()
-
-        if not is_product_repo and not is_factory_repo:
-            print("dasops doctor: could not detect a DASOPS repo in this directory.")
-            print("Expected one of: .dasops_product_repo or .dasops_factory_repo")
-            print(f"Checked: {repo_root}")
-            return 2
-
+        # Doctor uses raw_repo_root to honour the explicit --repo-root flag
+        # instead of resolving to the git toplevel (which may differ when
+        # the dasops directory is a subdirectory of a larger workspace).
+        doctor_root = raw_repo_root
+        report = run_doctor(doctor_root)
         print("dasops doctor")
-        print(f"Repo root: {repo_root}")
-        print(f"Repo type: {'product' if is_product_repo else 'factory'}")
-
-        if is_product_repo:
-            # Required stable files (external memory)
-            required = [
-                repo_root / "docs" / "master_doc.md",
-                repo_root / "docs" / "ui_spec.md",
-                repo_root / "docs" / "USER_MANUAL.md",
-                repo_root / "docs" / "policies" / "AGENT_OPERATING_MODEL.md",
-                repo_root / "AGENTS.override.md",
-                repo_root / "CLAUDE.md",
-                repo_root / "progress.txt",
-                repo_root / "openspec" / "config.yaml",
-            ]
-            for p in required:
-                if not p.exists():
-                    problems.append(f"Missing required file: {p.relative_to(repo_root)}")
-
-            # OpenSpec schema sanity check (best-effort)
-            cfg_path = repo_root / "openspec" / "config.yaml"
-            if cfg_path.exists():
-                try:
-                    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-                    schema = str(cfg.get("schema", "")).strip()
-                    if schema and schema != "das-standard":
-                        warnings.append(
-                            f"openspec/config.yaml schema is '{schema}' (expected 'das-standard')"
-                        )
-                except Exception as e:
-                    warnings.append(f"Could not parse openspec/config.yaml: {e}")
-
-            # Deterministic layout checks
-            if (repo_root / "docs" / "deltas").exists():
-                problems.append("Found docs/deltas/. Use openspec/changes/<change-id>/ instead (deterministic).")
-
-            stray_tasks: list[Path] = []
-            for p in repo_root.rglob("tasks.md"):
-                rel = p.relative_to(repo_root)
-                # Allowed: openspec/changes/<change-id>/tasks.md
-                ok = (
-                    len(rel.parts) == 4
-                    and rel.parts[0] == "openspec"
-                    and rel.parts[1] == "changes"
-                    and rel.parts[3] == "tasks.md"
-                )
-                if not ok:
-                    stray_tasks.append(rel)
-            if stray_tasks:
-                problems.append(
-                    "Found stray tasks.md outside openspec/changes/<change-id>/tasks.md:\n  - "
-                    + "\n  - ".join(str(p) for p in sorted(stray_tasks))
-                )
-
-            # Friendly next steps
+        print(f"Repo root: {report.repo_root}")
+        print(f"Repo type: {report.repo_type}")
+        if report.repo_type == "product":
             print("\nNext steps (typical):")
             print("  - Read docs/USER_MANUAL.md")
             print("  - Run ./scripts/verify")
             print("  - Create a change: dasops new-change --id <change-id> --intent \"...\"")
 
-        if is_factory_repo:
-            # Factory sanity checks (minimal)
-            if not (repo_root / "dasops" / "__main__.py").exists():
-                problems.append("Missing dasops/__main__.py")
-            if not (repo_root / "templates" / "das-product").exists():
-                problems.append("Missing templates/das-product")
-
-        if warnings:
+        if report.warnings:
             print("\nWarnings:")
-            for w in warnings:
-                print(f"- {w}")
+            for warning in report.warnings:
+                print(f"- {warning}")
 
-        if problems:
+        if report.problems:
             print("\nProblems:")
-            for p in problems:
-                print(f"- {p}")
+            for problem in report.problems:
+                print(f"- {problem}")
             print("\nResult: FAIL")
             return 2
 
+        if args.strict and report.warnings:
+            print("\nResult: FAIL (strict mode)")
+            return 2
+
         print("\nResult: OK")
+        return 0
+
+    # -----------------------------------------------------------------
+    # standards
+    # -----------------------------------------------------------------
+    if args.cmd == "standards":
+        standards_root = _resolve_repo_root(Path(getattr(args, "repo_root", ".")).expanduser().resolve())
+        if args.standards_cmd == "search":
+            payload = search_indexes(
+                standards_root,
+                query=args.query,
+                standard_root=args.standard_root,
+            )
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+                return 0
+            print(f"query: {payload['query']}")
+            print(f"matches: {payload['count']}")
+            for item in payload["results"]:
+                if item["kind"] == "chapter":
+                    print(f"- [chapter] {item['id']} — {item['title']} ({item['file']})")
+                else:
+                    print(f"- [clause] {item['id']} — {item['title']} ({item['chapter']})")
+            return 0
+
+        if args.standards_cmd == "show":
+            payload = show_clause(
+                standards_root,
+                clause_id=args.clause,
+                standard_root=args.standard_root,
+            )
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+                return 0
+            print(f"clause: {payload['id']}")
+            print(f"title: {payload['title']}")
+            print(f"chapter: {payload['chapter']} — {payload['chapterTitle']}")
+            print(f"chapterFile: {payload['chapterFile']}")
+            if payload["keywords"]:
+                print("keywords: " + ", ".join(payload["keywords"]))
+            if payload["gateLabels"]:
+                print("gateLabels: " + ", ".join(payload["gateLabels"]))
+            return 0
+
+        if args.standards_cmd == "pack":
+            payload = build_pack(
+                standards_root,
+                role=args.role,
+                standard_root=args.standard_root,
+            )
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+                return 0
+            print(f"role: {payload['role']}")
+            print(f"chapters: {payload['chapterCount']}")
+            print(f"clauses: {payload['clauseCount']}")
+            for chapter in payload["chapters"]:
+                print(f"- {chapter['id']} — {chapter['title']}")
+            return 0
+
+    # -----------------------------------------------------------------
+    # audit
+    # -----------------------------------------------------------------
+    if args.cmd == "audit":
+        result = audit_repo(repo_root)
+        payload = {
+            "schemaVersion": "1.0.0",
+            "repoRoot": str(result.repo_root),
+            "ok": not result.findings,
+            "findings": result.findings,
+        }
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(f"repoRoot: {payload['repoRoot']}")
+            print(f"ok: {payload['ok']}")
+            if payload["findings"]:
+                print("findings:")
+                for finding in payload["findings"]:
+                    print(f"- {finding}")
+        return 0
+
+    if args.cmd == "audit-repo":
+        payload = audit_report(Path(args.path).expanduser().resolve())
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            for finding in payload["findings"]:
+                print(f"- {finding}")
+        return 0 if payload["ok"] else 1
+
+    if args.cmd == "adopt-repo":
+        payload = adopt_report(Path(args.path).expanduser().resolve())
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            for repaired in payload["repairedArtifacts"]:
+                print(f"- {repaired}")
+        return 0 if payload["ok"] else 1
+
+    if args.cmd == "normalize-repo":
+        payload = normalize_report(Path(args.path).expanduser().resolve())
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            for repaired in payload["repairedArtifacts"]:
+                print(f"- {repaired}")
+            for rewrite in payload["docLinkRepairs"]:
+                print(f"- repaired link {rewrite['from']} -> {rewrite['to']}")
+        return 0 if payload["ok"] else 1
+
+    if args.cmd == "trace-check":
+        payload = trace_report(Path(args.path).expanduser().resolve())
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            if payload["ok"]:
+                print("OPS-002 trace-check: PASS")
+            else:
+                for problem in payload["problems"]:
+                    print(f"- {problem['message']}")
+        return 0 if payload["ok"] else 1
+
+    # -----------------------------------------------------------------
+    # template-audit
+    # -----------------------------------------------------------------
+    if args.cmd == "template-audit":
+        # Template-audit validates the factory tree itself.  Use the explicit
+        # --repo-root value rather than the git toplevel, because this repo is
+        # often checked out as a subdirectory of a larger DAS workspace.
+        report = run_template_audit(raw_repo_root)
+        payload = report.to_payload()
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(f"factoryRoot: {payload['factoryRoot']}")
+            print(f"templateRoot: {payload['templateRoot']}")
+            print(f"ok: {payload['ok']}")
+            if payload["problems"]:
+                print("problems:")
+                for problem in payload["problems"]:
+                    print(f"- {problem}")
+            if payload["warnings"]:
+                print("warnings:")
+                for warning in payload["warnings"]:
+                    print(f"- {warning}")
+        return 0 if payload["ok"] else 2
+
+    # -----------------------------------------------------------------
+    # lock-status
+    # -----------------------------------------------------------------
+    if args.cmd == "lock-status":
+        owner = _normalize_owner(args.expect_owner) if args.expect_owner else None
+        payload = inspect_lock(
+            repo_root=repo_root,
+            change_id=args.change_id,
+            task_id=args.task_id,
+            expect_owner=owner,
+        )
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        if not payload["exists"]:
+            return 1
+        if owner and not payload["ownerMatches"]:
+            return 2
         return 0
 
     # -----------------------------------------------------------------
@@ -582,14 +868,32 @@ def main(argv=None) -> int:
         if not owner:
             raise SystemExit("Owner is empty. Provide --owner or set $DASOPS_OWNER.")
 
-        lock_path = claim_task(
-            repo_root=repo_root,
-            change_id=args.change_id,
-            task_id=args.task_id,
-            owner=owner,
-            status=args.status,
-            force=args.force,
-        )
+        try:
+            lock_path = claim_task(
+                repo_root=repo_root,
+                change_id=args.change_id,
+                task_id=args.task_id,
+                owner=owner,
+                status=args.status,
+                force=args.force,
+            )
+        except SystemExit as exc:
+            if args.json:
+                change_dir = repo_root / "openspec" / "changes" / args.change_id
+                existing = read_lock(lock_path_for(change_dir, args.task_id))
+                payload = {
+                    "ok": False,
+                    "task": "OPS-003",
+                    "command": "claim-task",
+                    "changeId": args.change_id,
+                    "taskId": args.task_id,
+                    "requestedOwner": owner,
+                    "currentOwner": existing.owner if existing else None,
+                    "message": str(exc),
+                }
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+                return 1
+            raise
 
         hints = read_task_hints(repo_root=repo_root, change_id=args.change_id, task_id=args.task_id)
         tasks_path = hints.get("tasks_path")
@@ -730,6 +1034,8 @@ def main(argv=None) -> int:
     # -----------------------------------------------------------------
     if args.cmd == "complete-task":
         owner = _normalize_owner(args.owner) if args.owner else _default_owner(repo_root)
+        if not args.force:
+            _verify_task_before_completion(repo_root, args.change_id, args.task_id)
         lock_path = complete_task(
             repo_root=repo_root,
             change_id=args.change_id,
@@ -942,6 +1248,87 @@ def main(argv=None) -> int:
             mapping.update({"TASK_ID": str(args.task_id).strip(), "OWNER": owner})
 
         print(_render_prompt(template, mapping).rstrip() + "\n")
+        return 0
+
+    # -----------------------------------------------------------------
+    # renew-lock
+    # -----------------------------------------------------------------
+    if args.cmd == "renew-lock":
+        lp = renew_lock(
+            repo_root=repo_root,
+            change_id=args.change_id,
+            task_id=args.task_id,
+            owner=args.owner,
+            lock_token=args.lock_token,
+        )
+        if getattr(args, "json", False):
+            print(json.dumps({"renewed": True, "lockPath": str(lp)}))
+        else:
+            print(f"Lock renewed: {lp}")
+        return 0
+
+    # -----------------------------------------------------------------
+    # reclaim-lock
+    # -----------------------------------------------------------------
+    if args.cmd == "reclaim-lock":
+        change_dir = repo_root / "openspec" / "changes" / args.change_id
+        lock_file = lock_path_for(change_dir, args.task_id)
+        previous = read_lock(lock_file)
+        lp = reclaim_lock(
+            repo_root=repo_root,
+            change_id=args.change_id,
+            task_id=args.task_id,
+            new_owner=args.new_owner,
+            reason=args.reason,
+            force=args.force,
+        )
+        if getattr(args, "json", False):
+            current = read_lock(lp)
+            payload = {
+                "ok": True,
+                "task": "OPS-003",
+                "command": "reclaim-lock",
+                "reclaimed": True,
+                "taskId": args.task_id,
+                "previousOwner": previous.owner if previous else None,
+                "newOwner": current.owner if current else args.new_owner,
+                "oldToken": previous.lock_token if previous else None,
+                "newToken": current.lock_token if current else None,
+                "lockPath": str(lp),
+                "reason": args.reason,
+            }
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(f"Lock reclaimed: {lp}")
+        return 0
+
+    # -----------------------------------------------------------------
+    # check-stale
+    # -----------------------------------------------------------------
+    if args.cmd == "check-stale":
+        change_dir = repo_root / "openspec" / "changes" / args.change_id
+        lp = lock_path_for(change_dir, args.task_id)
+        lock = read_lock(lp)
+        if lock is None:
+            result = {"taskId": args.task_id, "lockExists": False, "stale": None}
+        else:
+            result = {
+                "taskId": args.task_id,
+                "lockExists": True,
+                "stale": is_stale(lock),
+                "owner": lock.owner,
+                "heartbeatAt": lock.heartbeat_at,
+                "leaseSeconds": lock.lease_seconds,
+            }
+        if getattr(args, "json", False):
+            print(json.dumps(result))
+        else:
+            if lock is None:
+                print(f"No lock for task {args.task_id}")
+            elif result["stale"]:
+                print(f"STALE: task {args.task_id} (owner={lock.owner}, heartbeat={lock.heartbeat_at})")
+            else:
+                print(f"ACTIVE: task {args.task_id} (owner={lock.owner}, heartbeat={lock.heartbeat_at})")
         return 0
 
     return 2
