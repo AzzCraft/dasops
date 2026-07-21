@@ -2,22 +2,337 @@ name: release-validation
 
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Exact annotated v* tag to validate; run this workflow itself from the default branch"
+        required: true
+        type: string
 
+# This workflow is intentionally non-publishing. The tag-source validation job
+# is unprivileged; a fresh trusted job independently rebuilds the one archive
+# it attests and cannot create or move a ref.
 permissions:
   contents: read
 
 jobs:
   validate:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    outputs:
+      version: "${{ steps.release_identity.outputs.version }}"
+      tag: "${{ steps.release_identity.outputs.tag }}"
+      tag_object: "${{ steps.release_identity.outputs.tag_object }}"
+      commit: "${{ steps.release_identity.outputs.commit }}"
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      - name: Resolve immutable release tag
+        id: release_ref
+        shell: bash
+        env:
+          DEFAULT_BRANCH: "${{ github.event.repository.default_branch }}"
+          REQUESTED_TAG: "${{ inputs.ref }}"
+          WORKFLOW_REF: "${{ github.workflow_ref }}"
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_REF" == *"@refs/heads/$DEFAULT_BRANCH" ]] || {
+            echo "manual validation must run the workflow from the default branch" >&2
+            exit 1
+          }
+          tag="$REQUESTED_TAG"
+          semver='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?'
+          [[ "$tag" =~ ^v${semver}$ ]] || {
+            echo "release validation accepts only a SemVer v* tag" >&2
+            exit 1
+          }
+          printf 'tag=%s\nref=refs/tags/%s\n' "$tag" "$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+          fetch-depth: 0
+          ref: "${{ steps.release_ref.outputs.ref }}"
+      - name: Bind the checked-out annotated tag to VERSION
+        id: release_identity
+        shell: bash
+        env:
+          TAG: "${{ steps.release_ref.outputs.tag }}"
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          [[ "$TAG" == "v$version" ]] || {
+            echo "tag $TAG does not match VERSION $version" >&2
+            exit 1
+          }
+          tag_object="$(git rev-parse "refs/tags/$TAG")"
+          [[ "$(git cat-file -t "$tag_object")" == "tag" ]] || {
+            echo "release tag must be an annotated tag" >&2
+            exit 1
+          }
+          commit="$(git rev-parse "$TAG^{commit}")"
+          [[ "$(git rev-parse HEAD^{commit})" == "$commit" ]] || {
+            echo "checked-out source does not match the requested tag target" >&2
+            exit 1
+          }
+          printf 'version=%s\ntag=%s\ntag_object=%s\ncommit=%s\n' \
+            "$version" "$TAG" "$tag_object" "$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
         with:
-          python-version: '3.11'
-      - run: python3 -m pip install -r requirements-verify.txt && python3 -m pip install -e .
-      - run: ./scripts/verify --standalone
-      - run: pip-audit --progress-spinner off -r requirements.txt
-      - run: bandit -q -lll -r dasops
+          python-version: "3.11"
+      - name: Install verification environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-verify.txt
+          python -m pip install -e .
+      - name: Verify public source
+        shell: bash
+        run: |
+          set -euo pipefail
+          . .venv/bin/activate
+          bash ./scripts/verify
+      - name: Audit Python dependencies and source
+        shell: bash
+        run: |
+          set -euo pipefail
+          . .venv/bin/activate
+          pip-audit --progress-spinner off --strict -r requirements-verify.txt
+          bandit -q -lll -r dasops
+      - name: Build deterministic release evidence
+        id: release_artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.release_identity.outputs.version }}"
+          tag="${{ steps.release_identity.outputs.tag }}"
+          tag_object="${{ steps.release_identity.outputs.tag_object }}"
+          commit="${{ steps.release_identity.outputs.commit }}"
+          artifact_dir="$RUNNER_TEMP/dasops-release-artifacts"
+          archive_name="dasops-${version}-source.tar.gz"
+          sbom_name="dasops-${version}.spdx.json"
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct "$commit")"
+
+          mkdir -p "$artifact_dir"
+          git archive --format=tar --prefix="dasops-${version}/" "$commit" | gzip -n > "$artifact_dir/$archive_name"
+          # Historical immutable tags predate the checked-in SBOM.  Generate a
+          # deterministic SPDX source inventory from the exact checked-out
+          # commit instead of copying a working-tree-only file.
+          python3 - "$artifact_dir/$sbom_name" "dasops" "$version" "$commit" <<'PY'
+          import hashlib
+          import json
+          import subprocess
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          output, repository, version, commit = sys.argv[1:]
+
+          def git_bytes(*arguments: str) -> bytes:
+              return subprocess.check_output(["git", *arguments])
+
+          timestamp = int(git_bytes("show", "-s", "--format=%ct", commit).decode("ascii").strip())
+          created = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+          entries = git_bytes("ls-tree", "-r", "-z", "--full-tree", commit).split(b"\0")
+          files = []
+          file_sha1s = []
+          relationships = []
+          for index, entry in enumerate(item for item in entries if item):
+              metadata, raw_path = entry.split(b"\t", 1)
+              mode, object_type, object_id = metadata.decode("ascii").split()
+              if object_type != "blob":
+                  continue
+              file_id = f"SPDXRef-File-{index:06d}"
+              contents = git_bytes("cat-file", "blob", object_id)
+              sha1 = hashlib.sha1(contents).hexdigest()
+              sha256 = hashlib.sha256(contents).hexdigest()
+              file_sha1s.append(sha1)
+              path = "./" + raw_path.decode("utf-8", "surrogateescape")
+              files.append({
+                  "SPDXID": file_id,
+                  "checksums": [
+                      {"algorithm": "SHA1", "checksumValue": sha1},
+                      {"algorithm": "SHA256", "checksumValue": sha256},
+                  ],
+                  "copyrightText": "NOASSERTION",
+                  "fileName": path,
+                  "licenseConcluded": "NOASSERTION",
+                  "licenseInfoInFiles": ["NOASSERTION"],
+                  "noticeText": f"git mode {mode}",
+              })
+              relationships.append({
+                  "spdxElementId": "SPDXRef-Package-Source",
+                  "relationshipType": "CONTAINS",
+                  "relatedSpdxElement": file_id,
+              })
+
+          package = {
+              "SPDXID": "SPDXRef-Package-Source",
+              "copyrightText": "NOASSERTION",
+              "downloadLocation": "NOASSERTION",
+              "filesAnalyzed": True,
+              "licenseConcluded": "NOASSERTION",
+              "licenseDeclared": "NOASSERTION",
+              "name": repository,
+              "packageVerificationCode": {
+                  "packageVerificationCodeValue": hashlib.sha1(
+                      "".join(sorted(file_sha1s)).encode("ascii")
+                  ).hexdigest(),
+              },
+              "supplier": "NOASSERTION",
+              "versionInfo": version,
+          }
+          payload = {
+              "SPDXID": "SPDXRef-DOCUMENT",
+              "creationInfo": {
+                  "created": created,
+                  "creators": ["Tool: DAS deterministic source SBOM generator"],
+              },
+              "dataLicense": "CC0-1.0",
+              "documentNamespace": f"https://github.com/AzzCraft/{repository}/sbom/{version}/{commit}",
+              "files": files,
+              "name": f"{repository}-{version}-source-inventory",
+              "packages": [package],
+              "relationships": [{
+                  "spdxElementId": "SPDXRef-DOCUMENT",
+                  "relationshipType": "DESCRIBES",
+                  "relatedSpdxElement": "SPDXRef-Package-Source",
+              }, *relationships],
+              "spdxVersion": "SPDX-2.3",
+          }
+          Path(output).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          python3 - "$artifact_dir/release-manifest.json" "$version" "$tag" "$tag_object" "$commit" "$archive_name" "$sbom_name" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          path, version, tag, tag_object, commit, archive, sbom = sys.argv[1:]
+          payload = {
+              "commit": commit,
+              "repository": "dasops",
+              "sbom": sbom,
+              "sbomKind": "SPDX-2.3 deterministic source inventory from the exact commit",
+              "sourceArchive": archive,
+              "tag": tag,
+              "tagObject": tag_object,
+              "version": version,
+          }
+          Path(path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          tar -tzf "$artifact_dir/$archive_name" >/dev/null
+          mkdir -p "$artifact_dir/extracted"
+          tar -xzf "$artifact_dir/$archive_name" -C "$artifact_dir/extracted"
+          test -f "$artifact_dir/extracted/dasops-${version}/VERSION"
+          (
+            cd "$artifact_dir"
+            while IFS= read -r artifact; do
+              sha256sum "$artifact"
+            done < <(printf '%s\n' "$archive_name" "$sbom_name" release-manifest.json | LC_ALL=C sort) > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          printf 'path=%s\nversion=%s\ntag=%s\ntag_object=%s\ncommit=%s\n' \
+            "$artifact_dir" "$version" "$tag" "$tag_object" "$commit" >> "$GITHUB_OUTPUT"
+      - name: Upload release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: "dasops-release-validation-${{ steps.release_artifacts.outputs.version }}-${{ steps.release_artifacts.outputs.commit }}"
+          path: "${{ steps.release_artifacts.outputs.path }}"
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+  attest:
+    name: attest trusted source archive
+    needs: validate
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Resolve trusted workflow and immutable release tag
+        id: release_ref
+        shell: bash
+        env:
+          DEFAULT_BRANCH: "${{ github.event.repository.default_branch }}"
+          REQUESTED_TAG: "${{ inputs.ref }}"
+          WORKFLOW_REF: "${{ github.workflow_ref }}"
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_REF" == *"@refs/heads/$DEFAULT_BRANCH" ]] || {
+            echo "manual validation must run the workflow from the default branch" >&2
+            exit 1
+          }
+          [[ "$REQUESTED_TAG" == "${{ needs.validate.outputs.tag }}" ]] || {
+            echo "validated tag output does not match requested tag" >&2
+            exit 1
+          }
+          printf 'tag=%s\nref=refs/tags/%s\n' "$REQUESTED_TAG" "$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: "${{ steps.release_ref.outputs.ref }}"
+      - name: Independently bind trusted tag identity
+        shell: bash
+        env:
+          TAG: "${{ steps.release_ref.outputs.tag }}"
+          EXPECTED_VERSION: "${{ needs.validate.outputs.version }}"
+          EXPECTED_TAG_OBJECT: "${{ needs.validate.outputs.tag_object }}"
+          EXPECTED_COMMIT: "${{ needs.validate.outputs.commit }}"
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          tag_object="$(git rev-parse "refs/tags/$TAG")"
+          commit="$(git rev-parse "$TAG^{commit}")"
+          [[ "$TAG" == "v$version" ]]
+          [[ "$(git cat-file -t "$tag_object")" == "tag" ]]
+          [[ "$(git rev-parse HEAD^{commit})" == "$commit" ]]
+          [[ "$version" == "$EXPECTED_VERSION" && "$tag_object" == "$EXPECTED_TAG_OBJECT" && "$commit" == "$EXPECTED_COMMIT" ]]
+      - name: Download unprivileged validation evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: "dasops-release-validation-${{ needs.validate.outputs.version }}-${{ needs.validate.outputs.commit }}"
+          path: "${{ runner.temp }}/release-artifacts"
+      - name: Rebuild and bind the source archive without executing tag code
+        id: trusted_artifact
+        shell: bash
+        env:
+          VERSION: "${{ needs.validate.outputs.version }}"
+          COMMIT: "${{ needs.validate.outputs.commit }}"
+          TAG_OBJECT: "${{ needs.validate.outputs.tag_object }}"
+          ARTIFACT_DIR: "${{ runner.temp }}/release-artifacts"
+        run: |
+          set -euo pipefail
+          archive_name="dasops-${VERSION}-source.tar.gz"
+          archive="$ARTIFACT_DIR/$archive_name"
+          [[ -f "$archive" && -f "$ARTIFACT_DIR/SHA256SUMS" && -f "$ARTIFACT_DIR/release-manifest.json" ]]
+          git archive --format=tar --prefix="dasops-${VERSION}/" "$COMMIT" | gzip -n > "$RUNNER_TEMP/rebuilt-source.tar.gz"
+          [[ "$(sha256sum "$archive" | awk '{print $1}')" == "$(sha256sum "$RUNNER_TEMP/rebuilt-source.tar.gz" | awk '{print $1}')" ]]
+          (cd "$ARTIFACT_DIR" && sha256sum --check SHA256SUMS)
+          mkdir -p "$RUNNER_TEMP/extracted-source"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/extracted-source"
+          test -f "$RUNNER_TEMP/extracted-source/dasops-${VERSION}/VERSION"
+          python3 - "$ARTIFACT_DIR/release-manifest.json" "$VERSION" "$COMMIT" "$TAG_OBJECT" <<'PY'
+          import json, sys
+          manifest, version, commit, tag_object = sys.argv[1:]
+          data = json.load(open(manifest, encoding="utf-8"))
+          assert data == {
+              "commit": commit,
+              "repository": "dasops",
+              "sbom": f"dasops-{version}.spdx.json",
+              "sbomKind": "SPDX-2.3 deterministic source inventory from the exact commit",
+              "sourceArchive": f"dasops-{version}-source.tar.gz",
+              "tag": f"v{version}",
+              "tagObject": tag_object,
+              "version": version,
+          }
+          PY
+          printf 'archive=%s\n' "$archive" >> "$GITHUB_OUTPUT"
+      - name: Attest trusted source archive
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: "${{ steps.trusted_artifact.outputs.archive }}"
