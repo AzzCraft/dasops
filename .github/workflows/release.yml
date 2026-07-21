@@ -55,6 +55,7 @@ jobs:
         id: release_identity
         shell: bash
         env:
+          DEFAULT_BRANCH: "${{ github.event.repository.default_branch }}"
           TAG: "${{ steps.release_ref.outputs.tag }}"
         run: |
           set -euo pipefail
@@ -71,6 +72,11 @@ jobs:
           commit="$(git rev-parse "$TAG^{commit}")"
           [[ "$(git rev-parse HEAD^{commit})" == "$commit" ]] || {
             echo "checked-out source does not match the requested tag target" >&2
+            exit 1
+          }
+          git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$commit" "refs/remotes/origin/$DEFAULT_BRANCH" || {
+            echo "release tag target is not reachable from the default branch" >&2
             exit 1
           }
           printf 'version=%s\ntag=%s\ntag_object=%s\ncommit=%s\n' \
@@ -244,7 +250,7 @@ jobs:
           compression-level: 0
 
   attest:
-    name: attest trusted source archive
+    name: attest trusted release evidence bundle
     needs: validate
     permissions:
       contents: read
@@ -279,6 +285,7 @@ jobs:
       - name: Independently bind trusted tag identity
         shell: bash
         env:
+          DEFAULT_BRANCH: "${{ github.event.repository.default_branch }}"
           TAG: "${{ steps.release_ref.outputs.tag }}"
           EXPECTED_VERSION: "${{ needs.validate.outputs.version }}"
           EXPECTED_TAG_OBJECT: "${{ needs.validate.outputs.tag_object }}"
@@ -292,6 +299,8 @@ jobs:
           [[ "$(git cat-file -t "$tag_object")" == "tag" ]]
           [[ "$(git rev-parse HEAD^{commit})" == "$commit" ]]
           [[ "$version" == "$EXPECTED_VERSION" && "$tag_object" == "$EXPECTED_TAG_OBJECT" && "$commit" == "$EXPECTED_COMMIT" ]]
+          git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$commit" "refs/remotes/origin/$DEFAULT_BRANCH"
       - name: Download unprivileged validation evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -308,8 +317,10 @@ jobs:
         run: |
           set -euo pipefail
           archive_name="dasops-${VERSION}-source.tar.gz"
+          sbom_name="dasops-${VERSION}.spdx.json"
           archive="$ARTIFACT_DIR/$archive_name"
-          [[ -f "$archive" && -f "$ARTIFACT_DIR/SHA256SUMS" && -f "$ARTIFACT_DIR/release-manifest.json" ]]
+          sbom="$ARTIFACT_DIR/$sbom_name"
+          [[ -f "$archive" && -f "$sbom" && -f "$ARTIFACT_DIR/SHA256SUMS" && -f "$ARTIFACT_DIR/release-manifest.json" ]]
           git archive --format=tar --prefix="dasops-${VERSION}/" "$COMMIT" | gzip -n > "$RUNNER_TEMP/rebuilt-source.tar.gz"
           [[ "$(sha256sum "$archive" | awk '{print $1}')" == "$(sha256sum "$RUNNER_TEMP/rebuilt-source.tar.gz" | awk '{print $1}')" ]]
           (cd "$ARTIFACT_DIR" && sha256sum --check SHA256SUMS)
@@ -331,8 +342,69 @@ jobs:
               "version": version,
           }
           PY
-          printf 'archive=%s\n' "$archive" >> "$GITHUB_OUTPUT"
-      - name: Attest trusted source archive
+          python3 - "$sbom" "$VERSION" "$COMMIT" <<'PY'
+          import hashlib, json, subprocess, sys
+          from datetime import datetime, timezone
+
+          sbom, version, commit = sys.argv[1:]
+          git = lambda *args: subprocess.check_output(["git", *args])
+          timestamp = int(git("show", "-s", "--format=%ct", commit).decode().strip())
+          created = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+          files, sha1s, relationships = [], [], []
+          entries = [item for item in git("ls-tree", "-r", "-z", "--full-tree", commit).split(b"\0") if item]
+          for index, entry in enumerate(entries):
+              metadata, raw_path = entry.split(b"\t", 1)
+              mode, kind, object_id = metadata.decode("ascii").split()
+              if kind != "blob":
+                  continue
+              contents = git("cat-file", "blob", object_id)
+              sha1 = hashlib.sha1(contents).hexdigest()
+              sha1s.append(sha1)
+              file_id = f"SPDXRef-File-{index:06d}"
+              files.append({
+                  "SPDXID": file_id,
+                  "checksums": [
+                      {"algorithm": "SHA1", "checksumValue": sha1},
+                      {"algorithm": "SHA256", "checksumValue": hashlib.sha256(contents).hexdigest()},
+                  ],
+                  "copyrightText": "NOASSERTION",
+                  "fileName": "./" + raw_path.decode("utf-8", "surrogateescape"),
+                  "licenseConcluded": "NOASSERTION",
+                  "licenseInfoInFiles": ["NOASSERTION"],
+                  "noticeText": f"git mode {mode}",
+              })
+              relationships.append({"spdxElementId": "SPDXRef-Package-Source", "relationshipType": "CONTAINS", "relatedSpdxElement": file_id})
+          expected = {
+              "SPDXID": "SPDXRef-DOCUMENT",
+              "creationInfo": {"created": created, "creators": ["Tool: DAS deterministic source SBOM generator"]},
+              "dataLicense": "CC0-1.0",
+              "documentNamespace": f"https://github.com/AzzCraft/dasops/sbom/{version}/{commit}",
+              "files": files,
+              "name": f"dasops-{version}-source-inventory",
+              "packages": [{
+                  "SPDXID": "SPDXRef-Package-Source", "copyrightText": "NOASSERTION", "downloadLocation": "NOASSERTION",
+                  "filesAnalyzed": True, "licenseConcluded": "NOASSERTION", "licenseDeclared": "NOASSERTION",
+                  "name": "dasops",
+                  "packageVerificationCode": {"packageVerificationCodeValue": hashlib.sha1("".join(sorted(sha1s)).encode("ascii")).hexdigest()},
+                  "supplier": "NOASSERTION", "versionInfo": version,
+              }],
+              "relationships": [{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Package-Source"}, *relationships],
+              "spdxVersion": "SPDX-2.3",
+          }
+          assert json.load(open(sbom, encoding="utf-8")) == expected, "untrusted SPDX inventory differs from trusted Git-object reconstruction"
+          PY
+          (
+            cd "$ARTIFACT_DIR"
+            while IFS= read -r artifact; do sha256sum "$artifact"; done \
+              < <(printf '%s\n' "$archive_name" "$sbom_name" release-manifest.json | LC_ALL=C sort) \
+              > "$RUNNER_TEMP/trusted-SHA256SUMS"
+            cmp SHA256SUMS "$RUNNER_TEMP/trusted-SHA256SUMS"
+          )
+          bundle="$RUNNER_TEMP/dasops-${VERSION}-evidence.tar"
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -cf "$bundle" -C "$ARTIFACT_DIR" "$archive_name" "$sbom_name" release-manifest.json SHA256SUMS
+          printf 'bundle=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
+      - name: Attest trusted release evidence bundle
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
-          subject-path: "${{ steps.trusted_artifact.outputs.archive }}"
+          subject-path: "${{ steps.trusted_artifact.outputs.bundle }}"
