@@ -20,6 +20,8 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      VERIFY_VENV: "${{ runner.temp }}/dasops-verify-venv"
     outputs:
       version: "${{ steps.release_identity.outputs.version }}"
       tag: "${{ steps.release_identity.outputs.tag }}"
@@ -88,8 +90,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m venv .venv
-          . .venv/bin/activate
+          python3 -m venv "$VERIFY_VENV"
+          . "$VERIFY_VENV/bin/activate"
           python -m pip install --upgrade pip
           python -m pip install -r requirements-verify.txt
           python -m pip install -e .
@@ -97,13 +99,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          . .venv/bin/activate
+          . "$VERIFY_VENV/bin/activate"
           bash ./scripts/verify
       - name: Audit Python dependencies and source
         shell: bash
         run: |
           set -euo pipefail
-          . .venv/bin/activate
+          . "$VERIFY_VENV/bin/activate"
           pip-audit --progress-spinner off --strict -r requirements-verify.txt
           bandit -q -lll -r dasops
       - name: Build deterministic release evidence
