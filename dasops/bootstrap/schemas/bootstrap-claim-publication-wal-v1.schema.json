@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-claim-publication-wal/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-claim-publication-wal/v1"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"requestDigest":{"$ref":"#/$defs/d"},"phase":{"enum":["publication_intent","pending_checkpoint","cas_started","cas_applied","receipt_written","claimed_checkpoint","slot_closed"]},"attemptId":{"$ref":"#/$defs/id"},"baseCommit":{"$ref":"#/$defs/o"},"candidateCommit":{"$ref":"#/$defs/o"},"registryHeadDigest":{"$ref":"#/$defs/d"},"publicationReceiptDigest":{"type":["string","null"],"pattern":"^sha256:[0-9a-f]{64}$"},"recordedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","requestDigest","phase","attemptId","baseCommit","candidateCommit","registryHeadDigest","publicationReceiptDigest","recordedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"o":{"type":"string","pattern":"^[0-9a-f]{40}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

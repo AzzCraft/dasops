@@ -1,0 +1,27 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"bootstrap-root-rotation-authorization/v1",
+  "type":"object",
+  "additionalProperties":false,
+  "properties":{
+    "schema":{"const":"bootstrap-root-rotation-authorization/v1"},
+    "recordDigest":{"$ref":"#/$defs/d"},
+    "operationId":{"$ref":"#/$defs/id"},
+    "acceptanceKind":{"enum":["old_threshold","new_threshold","anchor_owner"]},
+    "rotationSubjectDigest":{"$ref":"#/$defs/d"},
+    "threshold":{"type":"integer","minimum":1,"maximum":16},
+    "allowedFingerprints":{"type":"array","minItems":1,"maxItems":32,"uniqueItems":true,"items":{"$ref":"#/$defs/d"}},
+    "signatures":{"type":"array","minItems":1,"maxItems":32,"items":{"$ref":"#/$defs/sig"}},
+    "verifiedSigners":{"type":"array","minItems":1,"maxItems":32,"items":{"$ref":"#/$defs/signer"}},
+    "verifierAuthorityRef":{"type":"string","format":"uri"},
+    "verifierReceiptDigest":{"$ref":"#/$defs/d"},
+    "verifiedAt":{"type":"string","format":"date-time"}
+  },
+  "required":["schema","recordDigest","operationId","acceptanceKind","rotationSubjectDigest","threshold","allowedFingerprints","signatures","verifiedSigners","verifierAuthorityRef","verifierReceiptDigest","verifiedAt"],
+  "$defs":{
+    "d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"},
+    "sig":{"type":"object","additionalProperties":false,"properties":{"keyFingerprint":{"$ref":"#/$defs/d"},"identity":{"$ref":"#/$defs/id"},"role":{"enum":["root_signer","anchor_owner"]},"algorithm":{"const":"ed25519"},"signatureBase64":{"type":"string","pattern":"^[A-Za-z0-9+/]{86}==$"},"signedAt":{"type":"string","format":"date-time"}},"required":["keyFingerprint","identity","role","algorithm","signatureBase64","signedAt"]},
+    "signer":{"type":"object","additionalProperties":false,"properties":{"keyFingerprint":{"$ref":"#/$defs/d"},"identity":{"$ref":"#/$defs/id"},"role":{"enum":["root_signer","anchor_owner"]}},"required":["keyFingerprint","identity","role"]}
+  }
+}

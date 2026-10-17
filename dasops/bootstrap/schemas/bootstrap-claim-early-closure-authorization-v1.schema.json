@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-claim-early-closure-authorization/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-claim-early-closure-authorization/v1"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"operation":{"enum":["compensate_claim","abandon_claim"]},"attemptId":{"$ref":"#/$defs/id"},"claimedHeadDigest":{"$ref":"#/$defs/d"},"baseCommit":{"$ref":"#/$defs/o"},"candidateCommit":{"$ref":"#/$defs/o"},"publicationReceiptDigest":{"$ref":"#/$defs/d"},"handoffReceiptDigest":{"$ref":"#/$defs/d"},"priorFenceCommitted":{"const":true},"workDisposition":{"const":"complete"},"tokenDisposition":{"const":"destroyed"},"taskOnlyReversion":{"const":true},"authorizedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","operation","attemptId","claimedHeadDigest","baseCommit","candidateCommit","publicationReceiptDigest","handoffReceiptDigest","priorFenceCommitted","workDisposition","tokenDisposition","taskOnlyReversion","authorizedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"o":{"type":"string","pattern":"^[0-9a-f]{40}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

@@ -1,0 +1,4 @@
+# Optional local factory GUI.  Keep this direct dependency immutable so the
+# documented public entry point is reproducible and auditable.
+streamlit==1.60.0
+pyyaml==6.0.3

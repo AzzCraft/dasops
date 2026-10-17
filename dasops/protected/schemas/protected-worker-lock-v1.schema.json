@@ -1,0 +1,103 @@
+{
+  "$id": "protected-worker-lock/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "candidateCommit": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "changeId": {
+      "type": "string"
+    },
+    "claimGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "leaseGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "leaseExpiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "operationId": {
+      "type": "string"
+    },
+    "pendingCandidateCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "pendingOperationId": {
+      "type": "string"
+    },
+    "completionRequestDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-worker-lock/v1"
+    },
+    "status": {
+      "enum": [
+        "claim_pending",
+        "claimed_pending_activation",
+        "active",
+        "renewal_pending",
+        "release_pending",
+        "reclaim_pending",
+        "completion_pending",
+        "completed"
+      ],
+      "type": "string"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "tokenBase64": {
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "type": "string"
+    },
+    "tokenHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "operationId",
+    "changeId",
+    "taskId",
+    "owner",
+    "status",
+    "tokenBase64",
+    "tokenHash",
+    "claimGeneration",
+    "leaseGeneration",
+    "baseCommit",
+    "candidateCommit",
+    "updatedAt",
+    "leaseExpiresAt"
+  ],
+  "title": "Protected worker lock v1",
+  "type": "object"
+}

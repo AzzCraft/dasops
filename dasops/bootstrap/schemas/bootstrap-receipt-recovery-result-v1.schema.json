@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-receipt-recovery-result/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-receipt-recovery-result/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "outcome": {"enum": ["promoted_original", "recovered_alternate", "ambiguous_blocked"]},
+    "requestDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "authorizationDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "searchDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "currentHeadDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "priorSlotDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "slotDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "receiptDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "completedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "outcome", "requestDigest", "authorizationDigest", "searchDigest", "currentHeadDigest", "priorSlotDigest", "slotDigest", "receiptDigest", "completedAt"]
+}

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azzcraft.com/cadence/schemas/eval_report.schema.json",
+  "title": "EvalReport",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "$ref": "common.schema.json#/$defs/semver"
+    },
+    "evalId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "datasetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "datasetVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "datasetId",
+        "datasetVersion"
+      ]
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "fullReportRef": {
+          "type": "string"
+        },
+        "samplesRef": {
+          "type": "string"
+        }
+      }
+    },
+    "diagnostics": {
+      "$ref": "common.schema.json#/$defs/diagnostics"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "evalId",
+    "runAt",
+    "dataset",
+    "metrics",
+    "status"
+  ]
+}

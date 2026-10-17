@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "standardVersion": "1.4.0",
+  "chapters": [
+    {
+      "id": "ch-2",
+      "title": "Closure and canonical release inputs",
+      "file": "SPECIFICATION.md#2-scope-precedence-and-core-definitions",
+      "roles": ["backend"]
+    }
+  ]
+}

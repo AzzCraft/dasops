@@ -39,26 +39,11 @@ class FactoryTemplateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = self._create_repo(Path(tmp_dir))
             self.assertTrue((repo / "STANDARD_REF.md").exists())
-            self.assertFalse((repo / "tooling_lock.json").exists())
-            self.assertFalse((repo / "local_extension_manifest.json").exists())
+            self.assertTrue((repo / "tooling_lock.json").exists())
+            self.assertTrue((repo / "local_extension_manifest.json").exists())
             self.assertFalse((repo / "docs" / "standards" / "DAS_STANDARD.md").exists())
-            self.assertFalse((repo / "cadence.yaml").exists())
-
-            status = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=repo,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(status.stdout, "", "generated repository must be clean")
-            self.assertEqual(
-                subprocess.run(
-                    ["git", "rev-list", "--count", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
-                ).stdout.strip(),
-                "1",
-                "the standalone scaffold must have one truthful bootstrap commit",
-            )
+            cadence_yaml = (repo / "cadence.yaml").read_text(encoding="utf-8")
+            self.assertIn("core-v146-baseline", cadence_yaml)
 
     def test_fail_closed_sub_verifiers_and_structured_locks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

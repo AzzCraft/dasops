@@ -1,0 +1,21 @@
+{
+  "$id": "protected-launch-receipt/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "descriptorDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "exitCode": {"type": "integer"},
+    "finishedAt": {"format": "date-time", "type": "string"},
+    "outcome": {"enum": ["exited", "timed_out"], "type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "sandboxProfile": {"const": "bwrap-readonly-workspace-v1"},
+    "schema": {"const": "protected-launch-receipt/v1"},
+    "stderrSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "stderrSize": {"minimum": 0, "type": "integer"},
+    "stdoutSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "stdoutSize": {"minimum": 0, "type": "integer"}
+  },
+  "required": ["schema", "recordDigest", "descriptorDigest", "outcome", "exitCode", "sandboxProfile", "stdoutSha256", "stdoutSize", "stderrSha256", "stderrSize", "finishedAt"],
+  "title": "Protected digest-pinned launch receipt v1",
+  "type": "object"
+}

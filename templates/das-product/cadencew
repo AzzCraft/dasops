@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN_DIR="$ROOT_DIR/.cadence/bin"
+BIN="$BIN_DIR/cadence"
+
+ensure_bin() {
+  if [[ -x "$BIN" ]]; then
+    return 0
+  fi
+
+  if command -v cadence >/dev/null 2>&1; then
+    return 0
+  fi
+
+  mkdir -p "$BIN_DIR"
+
+  VENDOR_CORE="$ROOT_DIR/vendor/cadence/cadence-oss/cadence-core"
+  if [[ -d "$VENDOR_CORE" ]]; then
+    echo "cadencew: building cadence-core -> $BIN"
+    (cd "$VENDOR_CORE" && go build -o "$BIN" ./cmd/cadence)
+    chmod +x "$BIN"
+    return 0
+  fi
+
+  echo "cadencew: cadence not found and cadence-core is not vendored" >&2
+  echo "Install Cadence under vendor/cadence or install cadence globally" >&2
+  exit 127
+}
+
+ensure_bin
+
+if [[ -x "$BIN" ]]; then
+  exec "$BIN" "$@"
+else
+  exec cadence "$@"
+fi

@@ -1,0 +1,29 @@
+{
+  "$id": "protected-completion-request/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "authorizationChallengeDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "authorizationResponseDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "baseCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "candidateCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "changeId": {"type": "string"},
+    "changedPaths": {"items": {"minLength": 1, "type": "string"}, "minItems": 1, "type": "array", "uniqueItems": true},
+    "claimGeneration": {"minimum": 1, "type": "integer"},
+    "claimOperationId": {"type": "string"},
+    "expiresAt": {"format": "date-time", "type": "string"},
+    "inputDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "leaseGeneration": {"minimum": 1, "type": "integer"},
+    "operationId": {"type": "string"},
+    "owner": {"type": "string"},
+    "preparedAt": {"format": "date-time", "type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "schema": {"const": "protected-completion-request/v1"},
+    "taskId": {"type": "string"},
+    "taskPath": {"type": "string"},
+    "tokenHash": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "claimOperationId", "changeId", "taskId", "taskPath", "owner", "tokenHash", "claimGeneration", "leaseGeneration", "baseCommit", "candidateCommit", "changedPaths", "inputDigest", "authorizationChallengeDigest", "authorizationResponseDigest", "preparedAt", "expiresAt"],
+  "title": "Protected completion request v1",
+  "type": "object"
+}

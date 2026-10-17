@@ -7,6 +7,18 @@ on:
         description: "Exact annotated v* tag to validate; run this workflow itself from the default branch"
         required: true
         type: string
+      materials_artifact_id:
+        description: "Prepared offline build materials artifact ID for 1.2.0-beta.1"
+        required: false
+        type: string
+      materials_run_id:
+        description: "Exact workflow run holding that materials artifact"
+        required: false
+        type: string
+      materials_sha256:
+        description: "Independently pinned raw build-materials.json SHA256"
+        required: false
+        type: string
 
 # This workflow is intentionally non-publishing. The tag-source validation job
 # is unprivileged; a fresh trusted job independently rebuilds the one archive
@@ -20,8 +32,6 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      VERIFY_VENV: "${{ runner.temp }}/dasops-verify-venv"
     outputs:
       version: "${{ steps.release_identity.outputs.version }}"
       tag: "${{ steps.release_identity.outputs.tag }}"
@@ -86,6 +96,12 @@ jobs:
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
         with:
           python-version: "3.11"
+      - name: Configure an external verification environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          verify_venv="$RUNNER_TEMP/dasops-verify-venv"
+          printf 'VERIFY_VENV=%s\n' "$verify_venv" >> "$GITHUB_ENV"
       - name: Install verification environment
         shell: bash
         run: |
@@ -251,9 +267,113 @@ jobs:
           retention-days: 90
           compression-level: 0
 
+  build_tools:
+    name: build fixed beta tool without signing credentials
+    needs: validate
+    if: ${{ needs.validate.outputs.version == '1.2.0-beta.1' }}
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      artifact_id: "${{ steps.upload_tools.outputs.artifact-id }}"
+      control_commit: "${{ steps.tool_assets.outputs.control_commit }}"
+      recipe_sha256: "${{ steps.tool_assets.outputs.recipe_sha256 }}"
+      source_tree_sha256: "${{ steps.tool_assets.outputs.source_tree_sha256 }}"
+      payload_sha256: "${{ steps.tool_assets.outputs.payload_sha256 }}"
+      image_id: "${{ steps.tool_assets.outputs.image_id }}"
+    steps:
+      - name: Require pinned offline build inputs
+        shell: bash
+        env:
+          MATERIAL_ID: "${{ inputs.materials_artifact_id }}"
+          MATERIAL_RUN: "${{ inputs.materials_run_id }}"
+          MATERIAL_SHA: "${{ inputs.materials_sha256 }}"
+        run: |
+          set -euo pipefail
+          [[ "$MATERIAL_ID" =~ ^[0-9]+$ && "$MATERIAL_RUN" =~ ^[0-9]+$ && "$MATERIAL_SHA" =~ ^[0-9a-f]{64}$ ]]
+      - name: Checkout reviewed build control
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+          ref: "${{ github.event.repository.default_branch }}"
+          path: build-control
+      - name: Checkout candidate as data
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: "${{ inputs.ref }}"
+          path: tag-source
+      - name: Download pinned build materials
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: "${{ inputs.materials_artifact_id }}"
+          run-id: "${{ inputs.materials_run_id }}"
+          github-token: "${{ github.token }}"
+          path: "${{ runner.temp }}/tool-materials"
+      - name: Build and install exact tool asset in isolated domains
+        id: tool_assets
+        shell: bash
+        env:
+          REQUESTED_TAG: "${{ inputs.ref }}"
+          EXPECTED_COMMIT: "${{ needs.validate.outputs.commit }}"
+          EXPECTED_TAG_OBJECT: "${{ needs.validate.outputs.tag_object }}"
+          DEFAULT_BRANCH: "${{ github.event.repository.default_branch }}"
+          MATERIAL_SHA: "${{ inputs.materials_sha256 }}"
+        run: |
+          set -euo pipefail
+          version="$(git -C tag-source show HEAD:VERSION | tr -d '\r\n')"
+          commit="$(git -C tag-source rev-parse "$REQUESTED_TAG^{commit}")"
+          tag_object="$(git -C tag-source rev-parse "refs/tags/$REQUESTED_TAG")"
+          [[ "$version" == '1.2.0-beta.1' && "$REQUESTED_TAG" == "v$version" ]]
+          [[ "$(git -C tag-source cat-file -t "$tag_object")" == tag ]]
+          [[ "$commit" == "$EXPECTED_COMMIT" && "$tag_object" == "$EXPECTED_TAG_OBJECT" ]]
+          [[ "$(git -C tag-source rev-parse HEAD)" == "$commit" ]]
+          git -C tag-source fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          git -C tag-source merge-base --is-ancestor "$commit" "refs/remotes/origin/$DEFAULT_BRANCH"
+          control="$(git -C build-control rev-parse HEAD)"
+          python3 -I -B - "$commit" "$RUNNER_TEMP/tool-source" <<'PY'
+          import os,subprocess,sys
+          from pathlib import Path,PurePosixPath
+          commit,out=sys.argv[1:];root=Path(out);root.mkdir()
+          git=lambda *a:subprocess.check_output(['git','-C','tag-source',*a])
+          for entry in filter(None,git('ls-tree','-r','-z','--full-tree',commit).split(b'\0')):
+              meta,name=entry.split(b'\t',1);mode,kind,oid=meta.decode().split();name=name.decode('utf-8')
+              p=PurePosixPath(name)
+              if mode not in ('100644','100755') or kind!='blob' or p.is_absolute() or str(p)!=name or any(x in ('.','..') for x in p.parts):
+                  raise SystemExit('nonregular/noncanonical candidate Git input')
+              target=root/name;target.parent.mkdir(parents=True,exist_ok=True)
+              with target.open('xb') as f:f.write(git('cat-file','blob',oid))
+              os.chmod(target,0o755 if mode=='100755' else 0o644)
+          PY
+          python3 -I -B build-control/tools/build_tool_assets.py --component dasops \
+            --source "$RUNNER_TEMP/tool-source" --source-commit "$commit" --control-commit "$control" \
+            --materials "$RUNNER_TEMP/tool-materials/build-materials.json" --materials-sha256 "$MATERIAL_SHA" \
+            --materials-root "$RUNNER_TEMP/tool-materials" --out "$RUNNER_TEMP/tool-build" \
+            > "$RUNNER_TEMP/tool-build-result.json"
+          python3 -I -B - "$RUNNER_TEMP/tool-build-result.json" >> "$GITHUB_OUTPUT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          for field,key in [('control_commit','controlCommit'),('recipe_sha256','recipeSha256'),
+                            ('source_tree_sha256','sourceTreeSha256'),('payload_sha256','payloadSha256'),('image_id','imageId')]:
+              print(field+'='+r[key])
+          PY
+      - name: Upload protected build outputs
+        id: upload_tools
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: "dasops-derived-${{ needs.validate.outputs.version }}-${{ needs.validate.outputs.commit }}"
+          path: "${{ runner.temp }}/tool-build/build-1/"
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
   attest:
     name: attest trusted release evidence bundle
-    needs: validate
+    needs: [validate, build_tools]
+    if: ${{ always() && needs.validate.result == 'success' && (needs.build_tools.result == 'success' || needs.build_tools.result == 'skipped') }}
     permissions:
       contents: read
       id-token: write
@@ -406,6 +526,66 @@ jobs:
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
             -cf "$bundle" -C "$ARTIFACT_DIR" "$archive_name" "$sbom_name" release-manifest.json SHA256SUMS
           printf 'bundle=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
+      - name: Download protected tool asset by immutable artifact ID
+        if: ${{ needs.validate.outputs.version == '1.2.0-beta.1' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: "${{ needs.build_tools.outputs.artifact_id }}"
+          path: "${{ runner.temp }}/protected-tool"
+      - name: Bind derived payload without executing candidate or compiler
+        if: ${{ needs.validate.outputs.version == '1.2.0-beta.1' }}
+        shell: bash
+        env:
+          VERSION: "${{ needs.validate.outputs.version }}"
+          COMMIT: "${{ needs.validate.outputs.commit }}"
+          CONTROL_COMMIT: "${{ needs.build_tools.outputs.control_commit }}"
+          RECIPE_SHA: "${{ needs.build_tools.outputs.recipe_sha256 }}"
+          SOURCE_TREE_SHA: "${{ needs.build_tools.outputs.source_tree_sha256 }}"
+          PAYLOAD_SHA: "${{ needs.build_tools.outputs.payload_sha256 }}"
+          IMAGE_ID: "${{ needs.build_tools.outputs.image_id }}"
+          MATERIAL_SHA: "${{ inputs.materials_sha256 }}"
+          TOOL_DIR: "${{ runner.temp }}/protected-tool"
+          ARTIFACT_DIR: "${{ runner.temp }}/release-artifacts"
+        run: |
+          set -euo pipefail
+          python3 -I -B - <<'PY'
+          import hashlib,json,os,stat
+          from pathlib import Path
+          source=Path(os.environ['TOOL_DIR']);dest=Path(os.environ['ARTIFACT_DIR'])
+          filename='dasops-1.2.0b1-py3-none-any.whl'
+          def ordinary(name):
+              p=source/name;i=p.lstat()
+              if not stat.S_ISREG(i.st_mode) or i.st_nlink!=1 or not 0<i.st_size<=32*1024**2:
+                  raise SystemExit('nonregular or oversized derived asset')
+              return p.read_bytes()
+          raw=ordinary('tool-build-binding.json')
+          def pairs(items):
+              r={}
+              for k,v in items:
+                  if k in r:raise SystemExit('duplicate binding key')
+                  r[k]=v
+              return r
+          if len(raw)>65536:raise SystemExit('binding too large')
+          r=json.loads(raw,object_pairs_hook=pairs);payload=ordinary(filename)
+          expected=dict(schemaVersion='1.0.0',component='dasops',version=os.environ['VERSION'],
+              sourceCommit=os.environ['COMMIT'],controlCommit=os.environ['CONTROL_COMMIT'],
+              sourceTreeSha256=os.environ['SOURCE_TREE_SHA'],recipeSha256=os.environ['RECIPE_SHA'],
+              materialsSha256=os.environ['MATERIAL_SHA'],imageId=os.environ['IMAGE_ID'],platform='linux/amd64',
+              payload=filename,payloadSha256=os.environ['PAYLOAD_SHA'],payloadBytes=len(payload))
+          if r!=expected or hashlib.sha256(payload).hexdigest()!=expected['payloadSha256']:
+              raise SystemExit('protected derived asset identity or bytes differ')
+          for name,data in [(filename,payload),('tool-build-binding.json',raw)]:
+              with (dest/name).open('xb') as f:f.write(data)
+          PY
+          (
+            cd "$ARTIFACT_DIR"
+            for asset in dasops-1.2.0b1-py3-none-any.whl tool-build-binding.json; do sha256sum "$asset"; done >> SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -cf "$RUNNER_TEMP/dasops-${VERSION}-evidence.tar" -C "$ARTIFACT_DIR" \
+            "dasops-${VERSION}-source.tar.gz" "dasops-${VERSION}.spdx.json" release-manifest.json \
+            SHA256SUMS dasops-1.2.0b1-py3-none-any.whl tool-build-binding.json
       - name: Attest trusted release evidence bundle
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-registry-operation-result/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-registry-operation-result/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "operation": {"enum": ["register_attempt", "cancel_attempt"]},
+    "outcome": {"enum": ["registered", "cancelled_pre_cas"]},
+    "requestDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "entryDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "headDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "slotDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "headSlotCommitDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "currentDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "completedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "operation", "outcome", "requestDigest", "entryDigest", "headDigest", "slotDigest", "headSlotCommitDigest", "currentDigest", "completedAt"]
+}

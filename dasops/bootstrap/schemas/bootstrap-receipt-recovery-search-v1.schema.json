@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-receipt-recovery-search/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-receipt-recovery-search/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "recoveryId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "fencesCommitted": {"const": true},
+    "cutoffsComplete": {"const": true},
+    "candidateInventoryComplete": {"const": true},
+    "quarantineComplete": {"const": true},
+    "cutoffsDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "candidateInventoryDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "quarantineManifestDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "classification": {"enum": ["accepted_original", "zero_accepted", "ambiguous_blocked"]},
+    "acceptedCandidateCount": {"type": "integer", "minimum": 0},
+    "acceptedReceiptDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "recoveredReceiptDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "acceptedTrustedSigningTime": {"type": ["string", "null"], "format": "date-time"},
+    "completedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "recoveryId", "fencesCommitted", "cutoffsComplete", "candidateInventoryComplete", "quarantineComplete", "cutoffsDigest", "candidateInventoryDigest", "quarantineManifestDigest", "classification", "acceptedCandidateCount", "acceptedReceiptDigest", "recoveredReceiptDigest", "acceptedTrustedSigningTime", "completedAt"]
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "standardVersion": "1.4.0",
+  "clauses": [
+    {
+      "id": "cl-2.5",
+      "chapter": "ch-2",
+      "title": "Machine-readable standard manifest and release artifacts",
+      "file": "SPECIFICATION.md#25-machine-readable-standard-manifest-repo-canonical-release-artifacts-and-extension-mechanism",
+      "keywords": ["closure", "manifest"],
+      "gateLabels": []
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-head-slot-commit/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-head-slot-commit/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "headDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "headSequence": {"type": "string", "pattern": "^[0-9]{20}$"},
+    "slotDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "slotGeneration": {"const": 0},
+    "committedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "headDigest", "headSequence", "slotDigest", "slotGeneration", "committedAt"]
+}

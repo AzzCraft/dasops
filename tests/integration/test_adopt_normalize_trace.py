@@ -8,6 +8,7 @@ from pathlib import Path
 
 from tests._root_contract import repository_root_for_test_file
 
+
 REPO_ROOT = repository_root_for_test_file(__file__)
 DASOPS_ROOT = REPO_ROOT
 

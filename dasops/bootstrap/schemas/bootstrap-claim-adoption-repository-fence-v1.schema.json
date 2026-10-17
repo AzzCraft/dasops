@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-claim-adoption-repository-fence/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-claim-adoption-repository-fence/v1"},
+    "recordDigest": {"$ref": "#/$defs/d"},
+    "fenceId": {"$ref": "#/$defs/id"},
+    "packageId": {"$ref": "#/$defs/id"},
+    "operationId": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "authorizationDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "endpointRole": {"enum": ["old_repository", "new_repository"]},
+    "repositoryId": {"$ref": "#/$defs/d"},
+    "generation": {"type": "integer", "minimum": 0},
+    "state": {"enum": ["transition_fenced", "recovery_deny", "permanent_noncanonical", "released_after_success", "released_after_abort"]},
+    "previousFenceDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "previousState": {"type": ["string", "null"], "enum": [null, "transition_fenced", "recovery_deny"]},
+    "authorityEpoch": {"type": "integer", "minimum": 1},
+    "credentialEpoch": {"type": "integer", "minimum": 1},
+    "denyWriteScope": {"enum": ["all_non_recovery_writes", "permanent_noncanonical", "released"]},
+    "recoveryExceptionOperationId": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "transitionSubjectDigest": {"$ref": "#/$defs/d"},
+    "branchClosureDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "installedAt": {"type": "string", "format": "date-time"},
+    "readbackAt": {"type": "string", "format": "date-time"}
+  },
+  "required": [
+    "schema", "recordDigest", "fenceId", "packageId", "operationId", "authorizationDigest",
+    "endpointRole", "repositoryId", "generation", "state", "previousFenceDigest", "previousState",
+    "authorityEpoch", "credentialEpoch", "denyWriteScope", "recoveryExceptionOperationId",
+    "transitionSubjectDigest", "branchClosureDigest", "installedAt", "readbackAt"
+  ],
+  "oneOf": [
+    {"properties": {"state": {"const": "transition_fenced"}, "authorizationDigest": {"const": null}, "denyWriteScope": {"const": "all_non_recovery_writes"}, "branchClosureDigest": {"const": null}}},
+    {"properties": {"state": {"const": "recovery_deny"}, "operationId": {"$ref": "#/$defs/id"}, "authorizationDigest": {"$ref": "#/$defs/d"}, "denyWriteScope": {"const": "all_non_recovery_writes"}, "recoveryExceptionOperationId": {"$ref": "#/$defs/id"}, "branchClosureDigest": {"const": null}}},
+    {"properties": {"state": {"const": "permanent_noncanonical"}, "denyWriteScope": {"const": "permanent_noncanonical"}, "recoveryExceptionOperationId": {"const": null}}},
+    {"properties": {"state": {"enum": ["released_after_success", "released_after_abort"]}, "authorizationDigest": {"$ref": "#/$defs/d"}, "denyWriteScope": {"const": "released"}, "recoveryExceptionOperationId": {"const": null}, "branchClosureDigest": {"$ref": "#/$defs/d"}}}
+  ],
+  "$defs": {
+    "d": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "$id": "bootstrap-root/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bootstrap root v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "recordDigest", "signatureSubjectDigest", "rootId", "epoch", "anchorId", "previousRootDigest", "keys", "ordinaryThreshold", "recoveryThreshold", "toolPolicy", "registryProfileDigest", "storeProfileDigest", "checkpointProfileDigest", "legacyTokenProfileDigest", "validFrom", "validUntil", "revocationEndpoint", "signatures"],
+  "properties": {
+    "schema": {"const": "bootstrap-root/v1"},
+    "recordDigest": {"$ref": "#/$defs/digest"},
+    "signatureSubjectDigest": {"$ref": "#/$defs/digest"},
+    "rootId": {"$ref": "#/$defs/id"},
+    "epoch": {"type": "integer", "minimum": 1},
+    "anchorId": {"$ref": "#/$defs/id"},
+    "previousRootDigest": {"oneOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "keys": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["keyId", "fingerprint", "roles"],
+        "properties": {
+          "keyId": {"$ref": "#/$defs/id"},
+          "fingerprint": {"$ref": "#/$defs/digest"},
+          "roles": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"enum": ["root_signer", "recovery", "repository_owner", "upstream_governance", "independent_verifier", "security_reviewer", "orchestrator"]}
+          }
+        }
+      }
+    },
+    "ordinaryThreshold": {"type": "integer", "minimum": 1, "maximum": 16},
+    "recoveryThreshold": {"type": "integer", "minimum": 1, "maximum": 16},
+    "toolPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedSourceRepos", "minimumDasopsVersion", "requiredReviewRoles", "requiredOperationRoles", "allowedOperations"],
+      "properties": {
+        "allowedSourceRepos": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 3}},
+        "minimumDasopsVersion": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:rc(0|[1-9][0-9]*))?$"},
+        "requiredReviewRoles": {"$ref": "#/$defs/approvalRoles"},
+        "requiredOperationRoles": {"$ref": "#/$defs/operationRoles"},
+        "allowedOperations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/operation"}
+        }
+      }
+    },
+    "registryProfileDigest": {"$ref": "#/$defs/digest"},
+    "storeProfileDigest": {"$ref": "#/$defs/digest"},
+    "checkpointProfileDigest": {"$ref": "#/$defs/digest"},
+    "legacyTokenProfileDigest": {"$ref": "#/$defs/digest"},
+    "validFrom": {"type": "string", "format": "date-time"},
+    "validUntil": {"type": "string", "format": "date-time"},
+    "revocationEndpoint": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "signatures": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/signature"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "approvalRoles": {"type": "array", "minItems": 3, "uniqueItems": true, "items": {"enum": ["repository_owner", "upstream_governance", "independent_verifier", "security_reviewer"]}},
+    "operationRoles": {"type": "array", "minItems": 3, "uniqueItems": true, "items": {"enum": ["repository_owner", "orchestrator", "independent_verifier", "security_reviewer"]}},
+    "operation": {"enum": ["register_attempt", "cancel_attempt", "recover_receipt", "prepare_candidate", "publish_claim", "handoff_claim", "compensate_claim", "abandon_claim", "adopt_prepare", "adopt_publish", "adopt_cancel", "recover_publication"]},
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyFingerprint", "identity", "role", "algorithm", "signatureBase64", "signedAt"],
+      "properties": {
+        "keyFingerprint": {"$ref": "#/$defs/digest"},
+        "identity": {"$ref": "#/$defs/id"},
+        "role": {"type": "string", "minLength": 3},
+        "algorithm": {"const": "ed25519"},
+        "signatureBase64": {"type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$"},
+        "signedAt": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

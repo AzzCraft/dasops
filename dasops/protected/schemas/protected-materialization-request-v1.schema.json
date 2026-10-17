@@ -1,0 +1,33 @@
+{
+  "$id": "protected-materialization-request/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "commit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "destination": {"minLength": 1, "type": "string"},
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "blobOid": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+          "contentSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "mode": {"enum": ["100644", "100755"], "type": "string"},
+          "path": {"minLength": 1, "type": "string"},
+          "size": {"minimum": 0, "type": "integer"}
+        },
+        "required": ["path", "mode", "blobOid", "size", "contentSha256"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "maxTotalBytes": {"minimum": 1, "type": "integer"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "schema": {"const": "protected-materialization-request/v1"},
+    "sourceRepoPath": {"minLength": 1, "type": "string"},
+    "tree": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"}
+  },
+  "required": ["schema", "recordDigest", "sourceRepoPath", "commit", "tree", "destination", "files", "maxTotalBytes"],
+  "title": "Protected no-ref materialization request v1",
+  "type": "object"
+}

@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"bootstrap-successor-v3-activation-subject-index/v1",
+  "type":"object",
+  "additionalProperties":false,
+  "properties":{
+    "schema":{"const":"bootstrap-successor-v3-activation-subject-index/v1"},
+    "recordDigest":{"$ref":"#/$defs/d"},
+    "activationSlotDigest":{"$ref":"#/$defs/d"},
+    "activationSubjectDigest":{"$ref":"#/$defs/d"},
+    "activationId":{"$ref":"#/$defs/id"},
+    "activationStateDigest":{"$ref":"#/$defs/d"},
+    "reservedAt":{"type":"string","format":"date-time"}
+  },
+  "required":["schema","recordDigest","activationSlotDigest","activationSubjectDigest","activationId","activationStateDigest","reservedAt"],
+  "$defs":{
+    "d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"}
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-adoption-recovery-request/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-adoption-recovery-request/v1"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"packageId":{"$ref":"#/$defs/id"},"packageDigest":{"$ref":"#/$defs/d"},"publishRequestDigest":{"$ref":"#/$defs/d"},"classification":{"enum":["resume_publish","proved_pre_cas_abort","ambiguous_blocked"]},"oldMainObserved":{"type":["string","null"],"pattern":"^[0-9a-f]{40}$"},"newMainObserved":{"type":["string","null"],"pattern":"^[0-9a-f]{40}$"},"oldFenceObserved":{"type":"boolean"},"requestedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","packageId","packageDigest","publishRequestDigest","classification","oldMainObserved","newMainObserved","oldFenceObserved","requestedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

@@ -1,0 +1,76 @@
+{
+  "$id": "protected-claim-result/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "candidateCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "changeId": {
+      "type": "string"
+    },
+    "claimGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "leaseGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "operationId": {
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "claimed_pending_activation",
+        "already_claimed",
+        "no_ready_task",
+        "conflict"
+      ],
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "recordDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-claim-result/v1"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "tokenHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "workerLockSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "operationId",
+    "outcome",
+    "changeId",
+    "taskId",
+    "owner",
+    "claimGeneration",
+    "leaseGeneration",
+    "tokenHash",
+    "baseCommit",
+    "candidateCommit",
+    "workerLockSha256"
+  ],
+  "title": "Protected claim result v1",
+  "type": "object"
+}

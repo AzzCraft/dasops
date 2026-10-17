@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-attempt-operation-wal/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-attempt-operation-wal/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "operation": {"enum": ["register_attempt", "cancel_attempt", "recover_receipt", "close_receipt", "prepare_candidate", "publish_claim_pending", "publish_claim", "compensate_claim", "abandon_claim", "adopt_claim", "emergency_recover"]},
+    "requestDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "phase": {"enum": ["prepared", "objects_written", "pointer_published", "completed"]},
+    "expectedPointerDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "candidatePointerDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "resultDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "recordedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "operation", "requestDigest", "phase", "expectedPointerDigest", "candidatePointerDigest", "resultDigest", "recordedAt"]
+}

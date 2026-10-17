@@ -112,14 +112,14 @@ class AdoptFlowGoldenTests(unittest.TestCase):
             result = audit_repo(repo)
             self.assertEqual(len(result.findings), 0, f"unexpected findings: {result.findings}")
 
-    def test_normalize_does_not_synthesize_compliance_files(self) -> None:
+    def test_normalize_creates_missing_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             result = normalize_repo(repo)
             self.assertGreater(len(result.repaired), 0)
-            # A verifier and governance content need repository-specific work.
-            self.assertFalse((repo / "VERSION").exists())
-            self.assertFalse((repo / "README.md").exists())
+            # After normalize, files should exist
+            self.assertTrue((repo / "VERSION").exists())
+            self.assertTrue((repo / "README.md").exists())
             self.assertTrue((repo / "openspec" / "changes").is_dir())
 
     def test_repair_doc_links_empty_docs(self) -> None:

@@ -16,6 +16,7 @@ REPO_ROOT = repository_root_for_test_file(__file__)
 def _base_env() -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO_ROOT)
+    env["DAS_STANDARD_ROOT"] = str(REPO_ROOT / "tests" / "fixtures" / "standard-indexes")
     return env
 
 
@@ -181,29 +182,10 @@ class DoctorStrictCliTests(unittest.TestCase):
 
 
 class StandardsCliTests(unittest.TestCase):
-    def _write_standard_fixture(self, root: Path) -> Path:
-        standard = root / "das-standard"
-        standard.mkdir()
-        (standard / "chapter_index.json").write_text(
-            json.dumps(
-                {"chapters": [{"id": "ch-2", "title": "Closure", "summary": "closure", "roles": ["backend"], "file": "SPECIFICATION.md#chapter-2"}]}
-            ),
-            encoding="utf-8",
-        )
-        (standard / "clause_index.json").write_text(
-            json.dumps(
-                {"clauses": [{"id": "cl-2.5", "chapter": "ch-2", "title": "Closure", "keywords": ["closure"], "gateLabels": ["verify"]}]}
-            ),
-            encoding="utf-8",
-        )
-        return standard
-
-    def test_search_show_and_pack_use_explicit_machine_readable_indexes(self) -> None:
+    def test_search_show_and_pack_use_machine_readable_indexes(self) -> None:
         env = _base_env()
-        with tempfile.TemporaryDirectory() as directory:
-            standard = self._write_standard_fixture(Path(directory))
 
-            search = subprocess.run(
+        search = subprocess.run(
             [
                 sys.executable,
                 "-m",
@@ -214,8 +196,6 @@ class StandardsCliTests(unittest.TestCase):
                 "closure",
                 "--repo-root",
                 str(REPO_ROOT),
-                "--standard-root",
-                str(standard),
                 "--json",
             ],
             cwd=REPO_ROOT,
@@ -225,11 +205,11 @@ class StandardsCliTests(unittest.TestCase):
             stderr=subprocess.STDOUT,
             text=True,
         )
-            self.assertEqual(search.returncode, 0, search.stdout)
-            search_payload = json.loads(search.stdout)
-            self.assertGreater(search_payload["count"], 0)
+        self.assertEqual(search.returncode, 0, search.stdout)
+        search_payload = json.loads(search.stdout)
+        self.assertGreater(search_payload["count"], 0)
 
-            show = subprocess.run(
+        show = subprocess.run(
             [
                 sys.executable,
                 "-m",
@@ -240,8 +220,6 @@ class StandardsCliTests(unittest.TestCase):
                 "cl-2.5",
                 "--repo-root",
                 str(REPO_ROOT),
-                "--standard-root",
-                str(standard),
                 "--json",
             ],
             cwd=REPO_ROOT,
@@ -251,12 +229,12 @@ class StandardsCliTests(unittest.TestCase):
             stderr=subprocess.STDOUT,
             text=True,
         )
-            self.assertEqual(show.returncode, 0, show.stdout)
-            show_payload = json.loads(show.stdout)
-            self.assertEqual(show_payload["id"], "cl-2.5")
-            self.assertTrue(show_payload["chapterFile"].startswith("SPECIFICATION.md#"))
+        self.assertEqual(show.returncode, 0, show.stdout)
+        show_payload = json.loads(show.stdout)
+        self.assertEqual(show_payload["id"], "cl-2.5")
+        self.assertTrue(show_payload["chapterFile"].startswith("SPECIFICATION.md#"))
 
-            pack = subprocess.run(
+        pack = subprocess.run(
             [
                 sys.executable,
                 "-m",
@@ -267,8 +245,6 @@ class StandardsCliTests(unittest.TestCase):
                 "backend",
                 "--repo-root",
                 str(REPO_ROOT),
-                "--standard-root",
-                str(standard),
                 "--json",
             ],
             cwd=REPO_ROOT,
@@ -278,22 +254,7 @@ class StandardsCliTests(unittest.TestCase):
             stderr=subprocess.STDOUT,
             text=True,
         )
-            self.assertEqual(pack.returncode, 0, pack.stdout)
-            pack_payload = json.loads(pack.stdout)
-            self.assertEqual(pack_payload["role"], "backend")
-            self.assertGreater(pack_payload["chapterCount"], 0)
-
-    def test_missing_standard_indexes_has_truthful_diagnostic(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            missing = Path(directory) / "missing-standard"
-            result = subprocess.run(
-                [sys.executable, "-m", "dasops", "standards", "search", "--query", "closure", "--repo-root", str(REPO_ROOT), "--standard-root", str(missing)],
-                cwd=REPO_ROOT,
-                env=_base_env(),
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("explicit --standard-root", result.stdout)
+        self.assertEqual(pack.returncode, 0, pack.stdout)
+        pack_payload = json.loads(pack.stdout)
+        self.assertEqual(pack_payload["role"], "backend")
+        self.assertGreater(pack_payload["chapterCount"], 0)

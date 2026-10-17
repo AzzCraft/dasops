@@ -1,0 +1,24 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"bootstrap-root-rotation-operation-result/v1",
+  "type":"object",
+  "additionalProperties":false,
+  "properties":{
+    "schema":{"const":"bootstrap-root-rotation-operation-result/v1"},
+    "recordDigest":{"$ref":"#/$defs/d"},
+    "operationId":{"$ref":"#/$defs/id"},
+    "requestDigest":{"$ref":"#/$defs/d"},
+    "transitionDigest":{"$ref":"#/$defs/d"},
+    "currentHeadDigest":{"$ref":"#/$defs/d"},
+    "oldThresholdAuthorizationDigest":{"$ref":"#/$defs/d"},
+    "newThresholdAuthorizationDigest":{"$ref":"#/$defs/d"},
+    "anchorOwnerAuthorizationDigest":{"$ref":"#/$defs/d"},
+    "outcome":{"const":"rotated"},
+    "completedAt":{"type":"string","format":"date-time"}
+  },
+  "required":["schema","recordDigest","operationId","requestDigest","transitionDigest","currentHeadDigest","oldThresholdAuthorizationDigest","newThresholdAuthorizationDigest","anchorOwnerAuthorizationDigest","outcome","completedAt"],
+  "$defs":{
+    "d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"}
+  }
+}

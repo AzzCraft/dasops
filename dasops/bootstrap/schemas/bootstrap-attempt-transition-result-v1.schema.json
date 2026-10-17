@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-attempt-transition-result/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-attempt-transition-result/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "operation": {"enum": ["prepare_candidate", "publish_claim_pending", "publish_claim", "compensate_claim", "abandon_claim", "adopt_claim", "emergency_recover"]},
+    "requestDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "attemptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "priorHeadDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "entryDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "headDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "slotDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "headSlotCommitDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "currentDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "state": {"enum": ["candidate_prepared", "claim_publication_pending", "claimed", "compensated", "abandoned", "adopted", "emergency_recovered"]},
+    "completedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "operation", "requestDigest", "attemptId", "priorHeadDigest", "entryDigest", "headDigest", "slotDigest", "headSlotCommitDigest", "currentDigest", "state", "completedAt"]
+}

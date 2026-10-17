@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-claim-adoption-recovery-authority-deny/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-claim-adoption-recovery-authority-deny/v1"},
+    "recordDigest": {"$ref": "#/$defs/d"},
+    "denyId": {"$ref": "#/$defs/id"},
+    "packageId": {"$ref": "#/$defs/id"},
+    "packageDigest": {"$ref": "#/$defs/d"},
+    "prepareResultDigest": {"$ref": "#/$defs/d"},
+    "operationId": {"$ref": "#/$defs/id"},
+    "authorizationDigest": {"$ref": "#/$defs/d"},
+    "authorizationVerificationDigest": {"$ref": "#/$defs/d"},
+    "idempotencyKey": {"$ref": "#/$defs/id"},
+    "rootDigest": {"$ref": "#/$defs/d"},
+    "rootEpoch": {"type": "integer", "minimum": 1},
+    "oldAuthorityEpoch": {"type": "integer", "minimum": 1},
+    "newAuthorityEpoch": {"type": "integer", "minimum": 1},
+    "generation": {"type": "integer", "minimum": 0, "maximum": 1},
+    "state": {"enum": ["recovery_deny", "released_after_success", "released_after_abort"]},
+    "previousDenyDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "selectionHeadDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "branchClosureDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "updatedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": [
+    "schema", "recordDigest", "denyId", "packageId", "packageDigest", "prepareResultDigest",
+    "operationId", "authorizationDigest", "authorizationVerificationDigest", "idempotencyKey",
+    "rootDigest", "rootEpoch", "oldAuthorityEpoch", "newAuthorityEpoch", "generation", "state",
+    "previousDenyDigest", "selectionHeadDigest", "branchClosureDigest", "updatedAt"
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "generation": {"const": 0}, "state": {"const": "recovery_deny"},
+        "previousDenyDigest": {"const": null}, "selectionHeadDigest": {"const": null},
+        "branchClosureDigest": {"const": null}
+      }
+    },
+    {
+      "properties": {
+        "generation": {"const": 1},
+        "state": {"enum": ["released_after_success", "released_after_abort"]},
+        "previousDenyDigest": {"$ref": "#/$defs/d"},
+        "selectionHeadDigest": {"$ref": "#/$defs/d"},
+        "branchClosureDigest": {"$ref": "#/$defs/d"}
+      }
+    }
+  ],
+  "$defs": {
+    "d": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}
+  }
+}

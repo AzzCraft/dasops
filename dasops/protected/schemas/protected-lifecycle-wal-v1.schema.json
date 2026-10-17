@@ -1,0 +1,94 @@
+{
+  "$id": "protected-lifecycle-wal/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "authorizationChallengeDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "authorizationResponseDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "baseCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "candidateCommit": {
+      "anyOf": [
+        {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "changeId": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+    "claimOperationId": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+    "createdAt": {"format": "date-time", "type": "string"},
+    "idempotencyKey": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$", "type": "string"},
+    "leaseExpiresAt": {
+      "anyOf": [
+        {"format": "date-time", "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "newLeaseGeneration": {
+      "anyOf": [
+        {"minimum": 2, "type": "integer"},
+        {"type": "null"}
+      ]
+    },
+    "newTokenHash": {
+      "anyOf": [
+        {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "operation": {"enum": ["reclaim", "release", "renew"], "type": "string"},
+    "operationId": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+    "owner": {"minLength": 1, "type": "string"},
+    "pendingWorkerLockPath": {
+      "anyOf": [
+        {"minLength": 1, "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "phase": {
+      "enum": [
+        "intent",
+        "candidate_prepared",
+        "lock_replaced",
+        "state_committed",
+        "cas_pending",
+        "cas_applied",
+        "worker_lock_deleted",
+        "readback_complete"
+      ],
+      "type": "string"
+    },
+    "priorLeaseGeneration": {"minimum": 1, "type": "integer"},
+    "priorStateDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "priorTokenHash": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "schema": {"const": "protected-lifecycle-wal/v1"},
+    "taskId": {"pattern": "^[A-Za-z][A-Za-z0-9._-]{1,127}$", "type": "string"},
+    "workerLockPath": {"minLength": 1, "type": "string"}
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "operationId",
+    "idempotencyKey",
+    "operation",
+    "phase",
+    "claimOperationId",
+    "changeId",
+    "taskId",
+    "owner",
+    "priorStateDigest",
+    "priorTokenHash",
+    "priorLeaseGeneration",
+    "newTokenHash",
+    "newLeaseGeneration",
+    "leaseExpiresAt",
+    "baseCommit",
+    "candidateCommit",
+    "workerLockPath",
+    "pendingWorkerLockPath",
+    "authorizationChallengeDigest",
+    "authorizationResponseDigest",
+    "createdAt"
+  ],
+  "title": "Protected lifecycle WAL v1",
+  "type": "object"
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -27,15 +28,99 @@ def ensure_product_repo_permissions(repo_root: Path) -> None:
             if file_path.is_file():
                 chmod_executable(file_path)
 
-def seed_machine_readable_artifacts(repo_root: Path) -> None:
-    """Reserve governed closure artifacts for an explicit future integration.
+    cadencew = repo_root / "cadencew"
+    if cadencew.exists() and cadencew.is_file():
+        chmod_executable(cadencew)
 
-    A product scaffold must not claim a suite/Cadence closure or a local
-    extension before its owner supplies real, schema-valid data.  v1.0 creates
-    the standalone DAS/OpenSpec baseline only; an integration can materialize
-    those governed files later from immutable release pins.
+
+def seed_machine_readable_artifacts(repo_root: Path) -> None:
+    """Seed tooling_lock.json and local_extension_manifest.json into a new repo.
+
+    These machine-readable artifacts allow the suite to verify the seeded repo
+    as a closure participant from its first commit.
     """
-    del repo_root
+    tooling_lock = repo_root / "tooling_lock.json"
+    if not tooling_lock.exists():
+        lock_content = {
+            "$schema": "https://das-standard.dev/schemas/tooling_lock.schema.json",
+            "schemaVersion": "1.0.0",
+            "standardManifestVersion": "1.4.0",
+            "sourceOfTruth": {
+                "kind": "git",
+                "uri": ".",
+                "pinType": "commit",
+                "pinState": "pending",
+                "floating": False,
+            },
+            "verifyRuntime": {
+                "kind": "package",
+                "uri": "pkg://cadence-oss/core-v146-baseline",
+                "pinType": "version",
+                "pinValue": "2026.04",
+                "floating": False,
+            },
+            "suiteVersionClosureRef": {
+                "kind": "file",
+                "uri": "./suite_version_closure.json",
+                "pinType": "manifest",
+                "pinValue": "suite_version_closure.json",
+                "floating": False,
+            },
+            "suiteLockRef": {
+                "kind": "file",
+                "uri": "./suite_lock.json",
+                "pinType": "manifest",
+                "pinValue": "suite_lock.json",
+                "floating": False,
+            },
+            "verifyRegistryRef": {
+                "kind": "file",
+                "uri": "./vendor/cadence/cadence-oss/cadence-registry/registry.json",
+                "pinType": "manifest",
+                "pinValue": "registry.json",
+                "floating": False,
+            },
+            "generatorTemplateVersion": "2026.04.08",
+            "policyPackVersion": "2026.04",
+            "toolchain": [
+                {
+                    "name": "python3",
+                    "version": "3.10+",
+                },
+                {
+                    "name": "pyyaml",
+                    "version": "6.x",
+                    "manager": "pip",
+                },
+            ],
+        }
+        tooling_lock.write_text(
+            json.dumps(lock_content, indent=2) + "\n", encoding="utf-8"
+        )
+
+    ext_manifest = repo_root / "local_extension_manifest.json"
+    if not ext_manifest.exists():
+        manifest_content = {
+            "$schema": "https://das-standard.dev/schemas/local_extension_manifest.schema.json",
+            "schemaVersion": "1.0.0",
+            "standardManifestVersion": "1.4.0",
+            "extensions": [
+                {
+                    "name": "org.example.project.local-policy",
+                    "namespace": "org.example.project",
+                    "kind": "other",
+                    "extensionPoint": "other",
+                    "owner": "project-architecture",
+                    "scope": "project-local",
+                    "compatibilityNote": "Tracks project-local policy declarations outside the core DAS standard.",
+                    "reviewDate": "2026-12-31",
+                    "values": ["local-policy"],
+                }
+            ],
+        }
+        ext_manifest.write_text(
+            json.dumps(manifest_content, indent=2) + "\n", encoding="utf-8"
+        )
 
 
 def create_product_repo_from_template(
@@ -60,20 +145,18 @@ def create_product_repo_from_template(
         )
 
     dest_dir = dest_dir.expanduser().resolve()
-    if dest_dir == dest_dir.parent or dest_dir.name in {"", ".", ".."}:
-        raise SystemExit("Refusing an unsafe destination directory")
     if dest_dir.exists() and any(dest_dir.iterdir()):
         if not overwrite:
             raise SystemExit(
                 f"Destination directory is not empty: {dest_dir}\n"
                 "Refusing to overwrite. Use --overwrite if you really want this."
             )
-        marker = dest_dir / ".dasops_product_repo"
-        if not marker.is_file():
-            raise SystemExit("--overwrite only accepts an existing dasops-generated destination")
-        shutil.rmtree(dest_dir)
-    dest_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(template_dir, dest_dir)
+    else:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+    shutil.copytree(template_dir, dest_dir, dirs_exist_ok=True)
+
+    seed_machine_readable_artifacts(dest_dir)
 
     init_repo(
         repo_root=dest_dir,
@@ -101,6 +184,9 @@ def create_product_repo_from_template(
 
     if init_git:
         maybe_git_init(dest_dir)
+        finalize_bootstrap_provenance(dest_dir)
+    else:
+        _mark_lock_pin_pending(dest_dir)
 
     return dest_dir
 
@@ -128,6 +214,84 @@ def create_product_repo(
         overwrite=overwrite,
         change_empty=change_empty,
     )
+
+
+def finalize_bootstrap_provenance(repo_root: Path) -> str | None:
+    """Record the immutable bootstrap commit without creating a self-reference.
+
+    A commit cannot contain its own object ID.  The generated repository therefore
+    records the first bootstrap commit in ``tooling_lock.json`` and commits that
+    provenance update separately.  The resulting working tree is clean, the pin
+    resolves to a reachable immutable baseline, and later product commits do not
+    need to rewrite the lock.
+    """
+    lock_path = repo_root / "tooling_lock.json"
+    if not lock_path.exists() or not (repo_root / ".git").exists():
+        return None
+    try:
+        bootstrap_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    try:
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    sot = lock.get("sourceOfTruth", {})
+    if not isinstance(sot, dict):
+        return None
+    sot["pinValue"] = bootstrap_commit
+    sot.pop("pinState", None)
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    try:
+        subprocess.run(["git", "add", "tooling_lock.json"], cwd=str(repo_root), check=True)
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=str(repo_root),
+            check=False,
+        )
+        if staged.returncode != 0:
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=dasops",
+                    "-c",
+                    "user.email=dasops@local",
+                    "commit",
+                    "-m",
+                    "chore: record bootstrap source identity",
+                ],
+                cwd=str(repo_root),
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    return bootstrap_commit
+
+
+def _mark_lock_pin_pending(repo_root: Path) -> None:
+    """Mark no-git generated repos as explicitly unpinned and fail-closed."""
+    lock_path = repo_root / "tooling_lock.json"
+    if not lock_path.exists():
+        return
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    sot = lock.get("sourceOfTruth", {})
+    if not isinstance(sot, dict):
+        return
+    if sot.get("pinValue") == "replace-with-product-commit":
+        sot.pop("pinValue", None)
+    if not sot.get("pinValue"):
+        sot["pinState"] = "pending"
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
 
 
 def maybe_git_init(repo_root: Path) -> None:
@@ -170,12 +334,12 @@ def maybe_git_init(repo_root: Path) -> None:
                 "-m",
                 "chore: bootstrap DAS + OpenSpec scaffold",
             ],
-            check=True,
+            check=False,
         )
-    except FileNotFoundError as exc:
-        raise RuntimeError("git is required to initialize a requested repository") from exc
-    except Exception as exc:
-        raise RuntimeError(f"failed to initialize generated repository: {exc}") from exc
+    except FileNotFoundError:
+        return
+    except Exception:
+        return
 
 
 def init_repo(

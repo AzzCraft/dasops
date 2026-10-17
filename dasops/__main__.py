@@ -23,8 +23,12 @@ from .scaffold import (
     read_task_hints,
     release_task,
 )
-from .standards import build_pack, search_indexes, show_clause
+from .standards import build_pack, search_indexes, show_clause, resolve_preview, resolve_facts_preview
+from .standards_contracts import exact_json as exact_standard_json
 from .template_audit import run_template_audit
+from .protected_cli import add_protected_parsers, handle_protected
+from .govern_cli import add_govern_parsers, handle_govern
+from .bootstrap_cli import BootstrapCliError, add_bootstrap_parsers, handle_bootstrap
 
 
 def _render_prompt(template: str, mapping: dict[str, str]) -> str:
@@ -102,19 +106,19 @@ def _verify_task_before_completion(repo_root: Path, change_id: str, task_id: str
     if not command:
         raise SystemExit(f"{task_id} has no verify gate; refusing to mark DONE.")
 
+    try:
+        argv = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise SystemExit(f"{task_id} verify gate is not a valid command: {exc}") from exc
+    if not argv or any(token in {"|", "||", "&&", ";", ">", ">>", "<"} for token in argv):
+        raise SystemExit(f"{task_id} verify gate must be one executable command without shell operators.")
+
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env.setdefault("DAS_RELEASE_DONE_SWEEP_NESTED", "1")
-    try:
-        argv = shlex.split(command)
-    except ValueError as exc:
-        raise SystemExit(f"invalid verification command: {exc}") from exc
-    if not argv:
-        raise SystemExit("empty verification command")
     proc = subprocess.run(
         argv,
         cwd=str(repo_root),
-        shell=False,
         capture_output=True,
         text=True,
         env=env,
@@ -345,6 +349,12 @@ def main(argv=None) -> int:
     )
     standards_sub = p_standards.add_subparsers(dest="standards_cmd", required=True)
 
+    p_bundle_preview = standards_sub.add_parser("resolve-preview", help="Evaluate fact proposals or probe signed facts through pinned Cadence; no authority")
+    p_bundle_preview.add_argument("--input", required=True, help="Exact preview request JSON")
+    p_bundle_preview.add_argument("--cadence-binary", required=True, help="Absolute Cadence executable path")
+    p_bundle_preview.add_argument("--cadence-sha256", required=True, help="Exact executable sha256 pin")
+    p_bundle_preview.add_argument("--cadence-version", required=True, help="Exact component release version")
+
     p_standards_search = standards_sub.add_parser("search", help="Search standard chapters and clauses")
     p_standards_search.add_argument("--query", required=True, help="Search text, for example: closure")
     p_standards_search.add_argument("--standard-root", default=None, help="Optional path to das-standard")
@@ -531,6 +541,10 @@ def main(argv=None) -> int:
     p_check_stale.add_argument("--json", action="store_true")
     p_check_stale.add_argument("--repo-root", default=".")
 
+    add_protected_parsers(sub)
+    add_bootstrap_parsers(sub)
+    add_govern_parsers(sub)
+
     args = parser.parse_args(argv)
 
     # -----------------------------------------------------------------
@@ -574,9 +588,24 @@ def main(argv=None) -> int:
         print(f"Created product repo: {dest}")
         return 0
 
+    governed_result = handle_govern(args)
+    if governed_result is not None:
+        return governed_result
+
     # From here down: product repo commands
     raw_repo_root = Path(getattr(args, "repo_root", ".")).expanduser().resolve()
     repo_root = _resolve_repo_root(raw_repo_root)
+
+    protected_result = handle_protected(args)
+    if protected_result is not None:
+        return protected_result
+    try:
+        bootstrap_result = handle_bootstrap(args)
+    except BootstrapCliError as exc:
+        print(f"bootstrap invocation rejected: {exc}", file=sys.stderr)
+        return 2
+    if bootstrap_result is not None:
+        return bootstrap_result
 
     # -----------------------------------------------------------------
     # init
@@ -651,6 +680,20 @@ def main(argv=None) -> int:
     # standards
     # -----------------------------------------------------------------
     if args.cmd == "standards":
+        if args.standards_cmd == "resolve-preview":
+            try:
+                with Path(args.input).open("rb") as stream:
+                    raw = stream.read(exact_standard_json.MAX_BYTES + 1)
+                request = exact_standard_json.parse_catalog(raw)
+                if not isinstance(request, dict) or request.get("contractIdentity") not in (
+                        "das-bundle-preview-input/v2", "das-bundle-preview-input/v3", "das-approved-facts-preview-input/v1"):
+                    request = exact_standard_json.parse(raw)
+                resolver = resolve_facts_preview if isinstance(request, dict) and request.get("contractIdentity") == "das-approved-facts-preview-input/v1" else resolve_preview
+                result = resolver(request, binary=args.cadence_binary, binary_sha256=args.cadence_sha256, release_version=args.cadence_version)
+                print(exact_standard_json.canonical(result).decode("utf-8"))
+            except (OSError, ValueError) as exc:
+                raise SystemExit("Bundle preview failed; no approved governance result was produced") from exc
+            return 0
         standards_root = _resolve_repo_root(Path(getattr(args, "repo_root", ".")).expanduser().resolve())
         if args.standards_cmd == "search":
             payload = search_indexes(

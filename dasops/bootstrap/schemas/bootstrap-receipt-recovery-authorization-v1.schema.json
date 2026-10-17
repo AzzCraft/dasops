@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-receipt-recovery-authorization/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-receipt-recovery-authorization/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "recoveryId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "attemptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "headDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "rootDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "reason": {"enum": ["unavailable", "old_receipt_authority_compromised", "expired"]},
+    "compromiseEffectiveAt": {"type": ["string", "null"], "format": "date-time"},
+    "proofDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "authorizedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "recoveryId", "attemptId", "headDigest", "rootDigest", "reason", "compromiseEffectiveAt", "proofDigest", "authorizedAt"]
+}

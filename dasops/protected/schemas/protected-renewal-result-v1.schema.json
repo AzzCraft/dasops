@@ -1,0 +1,27 @@
+{
+  "$id": "protected-renewal-result/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "authorizationChallengeDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "authorizationResponseDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "canonicalCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "changeId": {"type": "string"},
+    "claimOperationId": {"type": "string"},
+    "leaseExpiresAt": {"format": "date-time", "type": "string"},
+    "newLeaseGeneration": {"minimum": 2, "type": "integer"},
+    "newTokenHash": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "operationId": {"type": "string"},
+    "outcome": {"const": "renewal_pending_activation"},
+    "owner": {"type": "string"},
+    "priorLeaseGeneration": {"minimum": 1, "type": "integer"},
+    "priorTokenHash": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "schema": {"const": "protected-renewal-result/v1"},
+    "taskId": {"type": "string"},
+    "workerLockSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "claimOperationId", "changeId", "taskId", "owner", "outcome", "priorTokenHash", "newTokenHash", "priorLeaseGeneration", "newLeaseGeneration", "leaseExpiresAt", "canonicalCommit", "workerLockSha256", "authorizationChallengeDigest", "authorizationResponseDigest"],
+  "title": "Protected renewal result v1",
+  "type": "object"
+}

@@ -1,0 +1,27 @@
+{
+  "$id": "protected-release-result/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "authorizationChallengeDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "authorizationResponseDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "baseCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "candidateCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "changeId": {"type": "string"},
+    "claimOperationId": {"type": "string"},
+    "claimGeneration": {"minimum": 1, "type": "integer"},
+    "leaseGeneration": {"minimum": 1, "type": "integer"},
+    "operationId": {"type": "string"},
+    "outcome": {"const": "released"},
+    "owner": {"type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "releasedAt": {"format": "date-time", "type": "string"},
+    "schema": {"const": "protected-release-result/v1"},
+    "taskId": {"type": "string"},
+    "tokenHash": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "workerLockDisposition": {"const": "deleted_with_filesystem_residuals_unclaimed"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "claimOperationId", "changeId", "taskId", "owner", "outcome", "tokenHash", "claimGeneration", "leaseGeneration", "baseCommit", "candidateCommit", "releasedAt", "workerLockDisposition", "authorizationChallengeDigest", "authorizationResponseDigest"],
+  "title": "Protected release result v1",
+  "type": "object"
+}

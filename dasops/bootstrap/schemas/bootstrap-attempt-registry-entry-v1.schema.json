@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-attempt-registry-entry/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-attempt-registry-entry/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "registryId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "sequence": {"type": "string", "pattern": "^[0-9]{20}$"},
+    "attemptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "rootDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "priorHeadDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "priorEntryDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "state": {"enum": ["registered", "candidate_prepared", "claim_publication_pending", "claimed", "cancelled_pre_cas", "adopted", "compensated", "abandoned", "emergency_recovered"]},
+    "transition": {"enum": ["register_attempt", "cancel_attempt", "prepare_candidate", "publish_claim_pending", "publish_claim", "adopt_claim", "compensate_claim", "abandon_claim", "emergency_recover"]},
+    "changeId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "taskId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "worker": {"type": "string", "minLength": 1, "maxLength": 128},
+    "baseCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "registrationKind": {"enum": ["normal_original", "promoted_original", "recovered_alternate"]},
+    "intentDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "waiverDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "tokenState": {"enum": ["not_generated", "generated", "disposed"]},
+    "terminalHeadDigests": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+    "transitionEvidenceDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "effectiveAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "registryId", "sequence", "attemptId", "rootDigest", "priorHeadDigest", "priorEntryDigest", "state", "transition", "changeId", "taskId", "worker", "baseCommit", "registrationKind", "intentDigest", "waiverDigest", "tokenState", "terminalHeadDigests", "transitionEvidenceDigest", "effectiveAt"]
+}

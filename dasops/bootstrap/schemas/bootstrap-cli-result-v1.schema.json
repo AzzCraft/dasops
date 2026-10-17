@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-cli-result/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-cli-result/v1"},"recordDigest":{"$ref":"#/$defs/d"},"invocationDigest":{"$ref":"#/$defs/d"},"operation":{"enum":["register_attempt","cancel_attempt","recover_receipt","prepare_candidate","publish_claim","handoff_claim","compensate_claim","abandon_claim","adopt_prepare","adopt_publish","adopt_cancel","recover_publication"]},"outcome":{"enum":["succeeded","rejected","failed"]},"resultDigest":{"type":["string","null"],"pattern":"^sha256:[0-9a-f]{64}$"},"message":{"type":["string","null"],"maxLength":1024},"completedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","invocationDigest","operation","outcome","resultDigest","message","completedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}}
+}

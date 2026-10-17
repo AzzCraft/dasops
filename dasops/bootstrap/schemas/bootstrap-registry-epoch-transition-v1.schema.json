@@ -1,0 +1,37 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"bootstrap-registry-epoch-transition/v1",
+  "type":"object",
+  "additionalProperties":false,
+  "properties":{
+    "schema":{"const":"bootstrap-registry-epoch-transition/v1"},
+    "recordDigest":{"$ref":"#/$defs/d"},
+    "transitionId":{"$ref":"#/$defs/id"},
+    "operationId":{"$ref":"#/$defs/id"},
+    "requestDigest":{"$ref":"#/$defs/d"},
+    "registryId":{"$ref":"#/$defs/id"},
+    "rootId":{"$ref":"#/$defs/id"},
+    "oldRootEpoch":{"type":"integer","minimum":1},
+    "oldRootDigest":{"$ref":"#/$defs/d"},
+    "oldRootVerificationReceiptDigest":{"$ref":"#/$defs/d"},
+    "oldRegistryProfileDigest":{"$ref":"#/$defs/d"},
+    "oldHeadDigest":{"$ref":"#/$defs/d"},
+    "newRootEpoch":{"type":"integer","minimum":2},
+    "newRootDigest":{"$ref":"#/$defs/d"},
+    "newRootVerificationReceiptDigest":{"$ref":"#/$defs/d"},
+    "newRegistryProfileDigest":{"$ref":"#/$defs/d"},
+    "registrySequence":{"type":"integer","minimum":1},
+    "terminalFrontierDigest":{"$ref":"#/$defs/d"},
+    "rotationSubjectDigest":{"$ref":"#/$defs/d"},
+    "oldThresholdAuthorizationDigest":{"$ref":"#/$defs/d"},
+    "newThresholdAuthorizationDigest":{"$ref":"#/$defs/d"},
+    "anchorOwnerAuthorizationDigest":{"$ref":"#/$defs/d"},
+    "activationMode":{"const":"normal_rotation"},
+    "transitionedAt":{"type":"string","format":"date-time"}
+  },
+  "required":["schema","recordDigest","transitionId","operationId","requestDigest","registryId","rootId","oldRootEpoch","oldRootDigest","oldRootVerificationReceiptDigest","oldRegistryProfileDigest","oldHeadDigest","newRootEpoch","newRootDigest","newRootVerificationReceiptDigest","newRegistryProfileDigest","registrySequence","terminalFrontierDigest","rotationSubjectDigest","oldThresholdAuthorizationDigest","newThresholdAuthorizationDigest","anchorOwnerAuthorizationDigest","activationMode","transitionedAt"],
+  "$defs":{
+    "d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"}
+  }
+}

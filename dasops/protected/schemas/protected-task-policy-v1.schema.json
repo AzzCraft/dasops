@@ -1,0 +1,70 @@
+{
+  "$id": "protected-task-policy/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allowedOperations": {
+      "items": {
+        "enum": [
+          "activate",
+          "claim",
+          "complete",
+          "reclaim",
+          "release",
+          "renew",
+          "route_abort",
+          "route_prepare",
+          "route_publish"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "canonicalRef": {
+      "const": "refs/heads/main"
+    },
+    "canonicalRepoPath": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "leaseSecondsMax": {
+      "maximum": 86400,
+      "minimum": 60,
+      "type": "integer"
+    },
+    "leaseSecondsMin": {
+      "maximum": 3600,
+      "minimum": 30,
+      "type": "integer"
+    },
+    "policyId": {
+      "pattern": "^[A-Z][A-Z0-9-]{2,127}$",
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-task-policy/v1"
+    },
+    "toolDigests": {
+      "additionalProperties": {
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "minProperties": 1,
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema",
+    "policyId",
+    "canonicalRepoPath",
+    "canonicalRef",
+    "allowedOperations",
+    "leaseSecondsMin",
+    "leaseSecondsMax",
+    "toolDigests"
+  ],
+  "title": "Protected task policy v1",
+  "type": "object"
+}

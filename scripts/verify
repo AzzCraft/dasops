@@ -4,26 +4,33 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PYTHONDONTWRITEBYTECODE=1
+export PYTEST_ADDOPTS=
 
-MODE="full"
-case "${1:-}" in
-  ""|--full|--standalone)
-    ;;
-  --fast)
-    MODE="fast"
-    ;;
-  *)
-    echo "Usage: scripts/verify [--fast|--full|--standalone]" >&2
-    exit 2
-    ;;
-esac
-if [[ $# -gt 1 ]]; then
-  echo "Usage: scripts/verify [--fast|--full|--standalone]" >&2
-  exit 2
+# Release preparation supplies an exact lock in an isolated environment.
+# Direct development runs may reuse installed supported dependencies; if a
+# required dependency is absent, provision the verification lock outside the tree.
+# Importability alone is not an exact-lock qualification claim.
+if [[ "${DASOPS_VERIFY_ENV_READY:-}" != "1" ]]; then
+  if ! python3 - <<'PY' >/dev/null 2>&1
+import jsonschema
+import pytest
+import pytest_timeout
+import rfc8785
+import rfc3339_validator
+import yaml
+PY
+  then
+    verify_environment="$(mktemp -d "${TMPDIR:-/tmp}/dasops-verify.XXXXXX")"
+    cleanup_verify_environment() {
+      rm -rf "$verify_environment"
+    }
+    trap cleanup_verify_environment EXIT
+    python3 -m venv "$verify_environment"
+    "$verify_environment/bin/python" -m pip install --disable-pip-version-check --no-input -r requirements-verify.txt
+    DASOPS_VERIFY_ENV_READY=1 PATH="$verify_environment/bin:$PATH" bash "$0" "$@"
+    exit $?
+  fi
 fi
-
-SOURCE_ID="$(git -C "$ROOT" rev-parse --verify HEAD 2>/dev/null || printf '%s' archive)"
-printf '%s\n' "mode=$MODE dasopsVersion=$(tr -d '[:space:]' < VERSION) dasStandardVersion=1.4.0 source=$SOURCE_ID python=$(python3 --version 2>&1)"
 
 python3 -m dasops --help >/dev/null
 python3 -m dasops doctor --help >/dev/null
@@ -35,9 +42,62 @@ python3 -m dasops template-audit --help >/dev/null
 python3 -m dasops prompt --help >/dev/null
 python3 -m dasops create --help >/dev/null
 python3 -m dasops lock-status --help >/dev/null
+python3 -m dasops govern --help >/dev/null
 
 python3 -m dasops template-audit --repo-root "$ROOT" --json >/dev/null
-python3 -m pytest -q -p no:cacheprovider tests
+export DAS_STANDARD_ROOT="$ROOT/tests/fixtures/standard-indexes"
+
+manifest="tests/verification_manifest.json"
+test -f "$manifest" || {
+  echo "missing verification manifest: $manifest" >&2
+  exit 1
+}
+mapfile -t public_test_paths < <(python3 - "$manifest" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+minimum = payload.get("minimumCollectedTests")
+if not isinstance(minimum, int) or minimum < 1:
+    raise SystemExit("verification manifest minimumCollectedTests must be a positive integer")
+paths = payload.get("publicTestPaths")
+if not isinstance(paths, list) or not paths or not all(isinstance(path, str) for path in paths):
+    raise SystemExit("verification manifest publicTestPaths must be a non-empty string array")
+if len(paths) != len(set(paths)):
+    raise SystemExit("verification manifest publicTestPaths must not contain duplicates")
+for path in paths:
+    if not path.startswith("tests/"):
+        raise SystemExit(f"verification manifest contains a non-public test path: {path}")
+    print(path)
+PY
+)
+minimum_collected_tests="$(python3 - "$manifest" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+print(payload["minimumCollectedTests"])
+PY
+)"
+if ((${#public_test_paths[@]} == 0)); then
+  echo "verification manifest selected no public test paths" >&2
+  exit 1
+fi
+collection_output="$(mktemp)"
+trap 'rm -f "$collection_output"' EXIT
+python3 -m pytest --collect-only -q -p no:cacheprovider -p timeout "${public_test_paths[@]}" >"$collection_output"
+collected_tests="$(sed -nE 's/^([0-9]+) tests collected.*$/\1/p' "$collection_output" | tail -n 1)"
+if [[ -z "$collected_tests" || "$collected_tests" -lt "$minimum_collected_tests" ]]; then
+  printf 'pytest collection fell below the required floor: observed=%s required=%s\n' \
+    "${collected_tests:-unknown}" "$minimum_collected_tests" >&2
+  cat "$collection_output" >&2
+  exit 1
+fi
+
+# A bounded per-test timeout turns a stalled integration fixture into an
+# actionable failure; the outer timeout bounds the complete verifier in CI.
+timeout --preserve-status 30m python3 -m pytest -q -p no:cacheprovider -p timeout \
+  --timeout=90 --timeout-method=signal "${public_test_paths[@]}"
 
 python3 - <<'PY'
 from pathlib import Path
@@ -62,11 +122,6 @@ for path in root.rglob("*"):
     if ".git" in path.parts or not path.is_file():
         continue
     rel = path.relative_to(root)
-    # Tests may name a forbidden pattern in order to assert its absence. The
-    # published application, documentation, and template surfaces are what
-    # this release-boundary gate evaluates.
-    if rel.parts and rel.parts[0] == "tests":
-        continue
     if rel.as_posix().endswith("docs/standards/DAS_STANDARD.md"):
         problems.append(f"copied standard doc remains: {rel}")
         continue
@@ -88,16 +143,9 @@ if problems:
     raise SystemExit(1)
 PY
 
-RESIDUE_FOUND=0
-while IFS= read -r residue; do
-  if [[ "$RESIDUE_FOUND" -eq 0 ]]; then
-    printf 'forbidden generated residue found:\n' >&2
-    RESIDUE_FOUND=1
-  fi
-  printf '%s\n' "$residue" >&2
-done < <(find "$ROOT" -path '*/.git' -prune -o \( -type d -name '__pycache__' -o -type f \( -name '*.pyc' -o -name '.DS_Store' \) \) -print)
-if [[ "$RESIDUE_FOUND" -ne 0 ]]; then
+mapfile -t RESIDUE < <(find "$ROOT" -path '*/.git' -prune -o \( -type d -name '__pycache__' -o -type f \( -name '*.pyc' -o -name '.DS_Store' \) \) -print)
+if ((${#RESIDUE[@]})); then
+  printf 'forbidden generated residue found:\n' >&2
+  printf '%s\n' "${RESIDUE[@]}" >&2
   exit 1
 fi
-
-echo "[dasops] $MODE verification OK"
