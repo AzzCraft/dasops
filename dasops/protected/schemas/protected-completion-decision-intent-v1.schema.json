@@ -1,0 +1,31 @@
+{
+  "$id": "protected-completion-decision-intent/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptedAt": {"format": "date-time", "type": "string"},
+    "action": {"enum": ["abort", "publish"], "type": "string"},
+    "approvalDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "canonicalHead": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "operationId": {"type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "requestDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "schema": {"const": "protected-completion-decision-intent/v1"},
+    "supersededDecisionDigest": {
+      "anyOf": [
+        {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "verificationDigest": {
+      "anyOf": [
+        {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "verifiedRoleBindingsDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "requestDigest", "action", "canonicalHead", "approvalDigest", "verificationDigest", "verifiedRoleBindingsDigest", "supersededDecisionDigest", "acceptedAt"],
+  "title": "Protected completion decision intent v1",
+  "type": "object"
+}

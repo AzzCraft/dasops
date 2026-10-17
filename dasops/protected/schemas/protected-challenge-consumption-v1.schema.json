@@ -1,0 +1,19 @@
+{
+  "$id": "protected-challenge-consumption/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "authorizationResponseDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "challengeDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "challengeId": {"pattern": "^[a-f0-9]{32}$", "type": "string"},
+    "consumedAt": {"format": "date-time", "type": "string"},
+    "inputDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "operationId": {"type": "string"},
+    "purpose": {"enum": ["completion_prepare"], "type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "schema": {"const": "protected-challenge-consumption/v1"}
+  },
+  "required": ["schema", "recordDigest", "challengeId", "challengeDigest", "authorizationResponseDigest", "operationId", "purpose", "inputDigest", "consumedAt"],
+  "title": "Protected challenge consumption v1",
+  "type": "object"
+}

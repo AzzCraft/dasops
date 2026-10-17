@@ -25,6 +25,8 @@ The only allowed paths are:
   - `docs/master_doc.md`
   - `docs/ui_spec.md`
   - `STANDARD_REF.md`
+  - `tooling_lock.json`
+  - `local_extension_manifest.json`
 - Change truth
   - `openspec/changes/<change-id>/master_doc_delta.md`
   - `openspec/changes/<change-id>/contracts_plan.md`
@@ -145,7 +147,48 @@ git worktree remove <path>
 git worktree prune
 ```
 
-Section 5. Health checks and sub-system verification
+Section 5. Cadence integration
+
+Cadence provides deterministic verification and evidence artifacts.
+
+Vendor Cadence
+
+```
+./scripts/install_cadence_vendor.sh --from-suite /path/to/DAS_TOOLS_v1_0_0/das-suite --tier oss
+```
+
+When using a standalone release package, `--from-suite` must point to
+`<release-root>/das-suite`. Cadence is copied only from the public sibling
+release module `<release-root>/cadence-oss`.
+
+Or clone from a Git base:
+
+```
+./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>
+```
+
+Clone mode is fail-closed: pass `--git-base`, `--org`, or set
+`DAS_SUITE_GIT_BASE`.
+
+Run Cadence on this repo
+
+```
+./cadencew verify --profile dev
+```
+
+Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof.
+
+When Cadence is vendored under `vendor/cadence`, `./scripts/verify` also runs `./cadencew verify --profile dev`.
+
+Evidence output is written to:
+
+`.cadence/out/<run-id>/`
+
+The latest alias is:
+
+`.cadence/out/latest/`
+
+Health check and sub-system verification:
 
 ```
 dasops doctor
@@ -164,8 +207,3 @@ template verifier expects:
   `themes`, and `locales` array contract
 - `artifacts/frontend/baseline/` to exist and contain baseline artifacts
 - `artifacts/frontend/screenshots/` to exist and contain reviewed captures
-
-Cadence/suite integration is intentionally not part of this v1.0 scaffold.
-Do not add a tooling lock, extension manifest, or Cadence configuration until
-the repository owner can provide a complete immutable closure that validates
-against the applicable standard schema.

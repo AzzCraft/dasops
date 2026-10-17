@@ -1,0 +1,35 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"bootstrap-successor-v3-activation-receipt/v1",
+  "type":"object",
+  "additionalProperties":false,
+  "properties":{
+    "schema":{"const":"bootstrap-successor-v3-activation-receipt/v1"},
+    "recordDigest":{"$ref":"#/$defs/d"},
+    "receiptId":{"$ref":"#/$defs/id"},
+    "activationId":{"$ref":"#/$defs/id"},
+    "challengeDigest":{"$ref":"#/$defs/d"},
+    "activationStateDigest":{"$ref":"#/$defs/d"},
+    "activationSlotDigest":{"$ref":"#/$defs/d"},
+    "activationSubjectDigest":{"$ref":"#/$defs/d"},
+    "rootEpoch":{"type":"integer","minimum":2},
+    "rootDigest":{"$ref":"#/$defs/d"},
+    "rotationHeadDigest":{"$ref":"#/$defs/d"},
+    "adoptionReceiptDigest":{"$ref":"#/$defs/d"},
+    "adoptionClosureVerificationReceiptDigest":{"$ref":"#/$defs/d"},
+    "successorProfileDigest":{"$ref":"#/$defs/d"},
+    "successorRegistryDigest":{"$ref":"#/$defs/d"},
+    "taskLockV3Digest":{"$ref":"#/$defs/d"},
+    "tokenHash":{"$ref":"#/$defs/d"},
+    "activationGeneration":{"type":"integer","minimum":1},
+    "responseDigest":{"$ref":"#/$defs/d"},
+    "brokerVerificationReceiptDigest":{"$ref":"#/$defs/d"},
+    "outcome":{"const":"active"},
+    "activatedAt":{"type":"string","format":"date-time"}
+  },
+  "required":["schema","recordDigest","receiptId","activationId","challengeDigest","activationStateDigest","activationSlotDigest","activationSubjectDigest","rootEpoch","rootDigest","rotationHeadDigest","adoptionReceiptDigest","adoptionClosureVerificationReceiptDigest","successorProfileDigest","successorRegistryDigest","taskLockV3Digest","tokenHash","activationGeneration","responseDigest","brokerVerificationReceiptDigest","outcome","activatedAt"],
+  "$defs":{
+    "d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"}
+  }
+}

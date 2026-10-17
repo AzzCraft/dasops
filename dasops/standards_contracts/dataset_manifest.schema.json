@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azzcraft.com/cadence/schemas/dataset_manifest.schema.json",
+  "title": "DatasetManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "$ref": "common.schema.json#/$defs/semver"
+    },
+    "datasetId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "datasetVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pointOfContact": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intendedUse": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "purpose": {
+          "type": "string"
+        },
+        "restrictions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "purpose",
+        "restrictions"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "collectionMethod": {
+          "type": "string"
+        },
+        "generatedAt": {
+          "type": "string"
+        },
+        "generatedBy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "collectionMethod"
+      ]
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "terms": {
+          "type": "string"
+        },
+        "restrictions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "terms",
+        "restrictions"
+      ]
+    },
+    "sensitivity": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "pii": {
+          "type": "string"
+        },
+        "accessLevel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pii",
+        "accessLevel"
+      ]
+    },
+    "schemaRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "splits": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "count"
+        ]
+      }
+    },
+    "snapshotId": {
+      "type": "string"
+    },
+    "contentHash": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "contentHashMethod": {
+      "type": "string"
+    },
+    "artifactRefs": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri"
+        ]
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "windowDays": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletionOwner": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "windowDays",
+        "deletionOwner"
+      ]
+    },
+    "storageUri": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "datasetId",
+    "datasetVersion",
+    "owner",
+    "pointOfContact",
+    "intendedUse",
+    "provenance",
+    "license",
+    "sensitivity",
+    "schemaRef",
+    "splits",
+    "artifactRefs",
+    "retention"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "snapshotId"
+      ]
+    },
+    {
+      "required": [
+        "contentHash"
+      ]
+    }
+  ],
+  "dependentRequired": {
+    "contentHash": [
+      "contentHashMethod"
+    ]
+  }
+}

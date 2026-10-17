@@ -1,0 +1,17 @@
+{
+  "$id": "protected-route-prepare-intent/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "preparedAt": {"format": "date-time", "type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "requestDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "requestId": {"type": "string"},
+    "schema": {"const": "protected-route-prepare-intent/v1"},
+    "taskPath": {"type": "string"}
+  },
+  "required": ["schema", "recordDigest", "requestId", "requestDigest", "baseCommit", "taskPath", "preparedAt"],
+  "title": "Protected route prepare intent v1",
+  "type": "object"
+}

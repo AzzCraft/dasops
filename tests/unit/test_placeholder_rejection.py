@@ -16,17 +16,15 @@ class TestGeneratedProductPlaceholderScan(unittest.TestCase):
     TEMPLATE_ROOT = REPO_ROOT / "templates" / "das-product"
 
     def test_no_placeholder_in_template_files(self):
-        if not self.TEMPLATE_ROOT.exists():
-            self.skipTest("dasops-product template directory not found")
+        self.assertTrue(self.TEMPLATE_ROOT.is_dir(), "dasops-product template directory not found")
+        scanned = 0
         for path in self.TEMPLATE_ROOT.rglob("*"):
             if not path.is_file():
                 continue
             if path.suffix in (".pyc", ".pyo", ".whl", ".egg"):
                 continue
-            try:
-                content = path.read_text(errors="replace")
-            except Exception:
-                continue
+            content = path.read_text(errors="replace")
+            scanned += 1
             rel = path.relative_to(self.TEMPLATE_ROOT)
             with self.subTest(file=str(rel)):
                 matches = PLACEHOLDER_RE.findall(content)
@@ -35,6 +33,8 @@ class TestGeneratedProductPlaceholderScan(unittest.TestCase):
                     [],
                     f"template {rel} contains forbidden placeholder(s): {matches}",
                 )
+
+        self.assertGreater(scanned, 0, "template contains no readable files")
 
 
 if __name__ == "__main__":

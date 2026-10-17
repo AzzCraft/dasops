@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-claim-adoption-publication-recovery-authorization/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-claim-adoption-publication-recovery-authorization/v1"},
+    "recordDigest": {"$ref": "#/$defs/d"},
+    "authorizationId": {"$ref": "#/$defs/id"},
+    "operationId": {"$ref": "#/$defs/id"},
+    "rootDigest": {"$ref": "#/$defs/d"},
+    "rootEpoch": {"type": "integer", "minimum": 1},
+    "packageId": {"$ref": "#/$defs/id"},
+    "packageDigest": {"$ref": "#/$defs/d"},
+    "prepareResultDigest": {"$ref": "#/$defs/d"},
+    "candidateCommit": {"$ref": "#/$defs/o"},
+    "oldRepositoryId": {"$ref": "#/$defs/d"},
+    "newRepositoryId": {"$ref": "#/$defs/d"},
+    "expectedOldMain": {"$ref": "#/$defs/o"},
+    "oldFencePrestateDigest": {"$ref": "#/$defs/d"},
+    "expectedOldFenceState": {"enum": ["transition_fenced", "permanent_noncanonical"]},
+    "transitionSubjectDigest": {"$ref": "#/$defs/d"},
+    "newFencePrestateExpectedAbsent": {"const": true},
+    "oldAuthorityEpoch": {"type": "integer", "minimum": 1},
+    "newAuthorityEpoch": {"type": "integer", "minimum": 1},
+    "oldCredentialEpoch": {"type": "integer", "minimum": 1},
+    "newCredentialEpoch": {"type": "integer", "minimum": 1},
+    "lockProfileDigest": {"$ref": "#/$defs/d"},
+    "observationProfileDigest": {"$ref": "#/$defs/d"},
+    "idempotencyKey": {"$ref": "#/$defs/id"},
+    "executorId": {"$ref": "#/$defs/id"},
+    "oldRepositoryOwnerId": {"$ref": "#/$defs/id"},
+    "newRepositoryOwnerId": {"$ref": "#/$defs/id"},
+    "securityRecoveryOwnerId": {"$ref": "#/$defs/id"},
+    "rootRecoverySignerIdentities": {
+      "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "rootRecoveryThreshold": {"type": "integer", "minimum": 1, "maximum": 8},
+    "requiredRoles": {
+      "const": ["new_repository_owner", "old_repository_owner", "root_recovery", "security_recovery_owner"]
+    },
+    "authorizedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "signatureSubjectDigest": {"$ref": "#/$defs/d"},
+    "signatures": {"$ref": "#/$defs/sigs"}
+  },
+  "required": [
+    "schema", "recordDigest", "authorizationId", "operationId", "rootDigest", "rootEpoch",
+    "packageId", "packageDigest", "prepareResultDigest", "candidateCommit", "oldRepositoryId",
+    "newRepositoryId", "expectedOldMain", "oldFencePrestateDigest", "expectedOldFenceState", "transitionSubjectDigest",
+    "newFencePrestateExpectedAbsent", "oldAuthorityEpoch", "newAuthorityEpoch",
+    "oldCredentialEpoch", "newCredentialEpoch", "lockProfileDigest", "observationProfileDigest",
+    "idempotencyKey", "executorId", "oldRepositoryOwnerId", "newRepositoryOwnerId",
+    "securityRecoveryOwnerId", "rootRecoverySignerIdentities", "rootRecoveryThreshold",
+    "requiredRoles", "authorizedAt", "expiresAt", "signatureSubjectDigest", "signatures"
+  ],
+  "$defs": {
+    "d": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "o": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "sigs": {
+      "type": "array", "minItems": 4, "maxItems": 16,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "keyFingerprint": {"$ref": "#/$defs/d"},
+          "identity": {"$ref": "#/$defs/id"},
+          "role": {"enum": ["new_repository_owner", "old_repository_owner", "root_recovery", "security_recovery_owner"]},
+          "algorithm": {"const": "ed25519"},
+          "signatureBase64": {"type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$"},
+          "signedAt": {"type": "string", "format": "date-time"}
+        },
+        "required": ["keyFingerprint", "identity", "role", "algorithm", "signatureBase64", "signedAt"]
+      }
+    }
+  }
+}

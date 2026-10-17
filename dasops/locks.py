@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -148,25 +147,7 @@ def write_lock(lock_path: Path, lock: TaskLock, *, must_create: bool = False) ->
         finally:
             os.close(fd)
     else:
-        _atomic_write_text(lock_path, content)
-
-
-def _atomic_write_text(path: Path, content: str) -> None:
-    """Replace a text file atomically within its existing filesystem."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_name, path)
-    except BaseException:
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
+        lock_path.write_text(content, encoding="utf-8")
 
 
 def inspect_lock(
@@ -226,6 +207,16 @@ def claim_task(
     lock_dir.mkdir(parents=True, exist_ok=True)
     lock_path = lock_path_for(change_dir, task_id)
 
+    tasks_md = tasks_path.read_text(encoding="utf-8")
+    current_owner, _current_status = extract_task_owner_status(tasks_md, task_id)
+    if current_owner and not is_unassigned_owner(current_owner) and current_owner != owner and not force:
+        raise SystemExit(
+            f"Task {task_id} owner mismatch.\n"
+            f"- tasks.md owner: '{current_owner}'\n"
+            f"- you requested:  '{owner}'\n"
+            "Refusing to claim. Ask Orchestrator to re-assign, or re-run with --force (Orchestrator only)."
+        )
+
     existing_lock = read_lock(lock_path)
     if existing_lock and existing_lock.owner != owner and not force:
         raise SystemExit(
@@ -248,39 +239,14 @@ def claim_task(
         audit_history=existing_lock.audit_history if existing_lock else [],
     )
 
-    created_lock = existing_lock is None
-    if created_lock:
-        # The O_EXCL claim is the linearization point.  Do it before changing
-        # tasks.md so a losing worker cannot overwrite the winning owner.
-        write_lock(lock_path, lock, must_create=True)
-
-    try:
-        # Re-read after acquiring a new lock: a different actor may have
-        # changed the task while this claimant was waiting for the lock.
-        tasks_md = tasks_path.read_text(encoding="utf-8")
-        current_owner, _current_status = extract_task_owner_status(tasks_md, task_id)
-        if current_owner and not is_unassigned_owner(current_owner) and current_owner != owner and not force:
-            raise SystemExit(
-                f"Task {task_id} owner mismatch.\n"
-                f"- tasks.md owner: '{current_owner}'\n"
-                f"- you requested:  '{owner}'\n"
-                "Refusing to claim. Ask Orchestrator to re-assign, or re-run with --force (Orchestrator only)."
-            )
-        updated, changed = update_tasks_md_text(tasks_md, task_id, owner, status)
-        if not changed:
-            raise SystemExit(
-                f"Task ID '{task_id}' not found in {tasks_path}.\n"
-                "Refusing to claim. Orchestrator should add the task first."
-            )
-        _atomic_write_text(tasks_path, updated)
-        if not created_lock:
-            write_lock(lock_path, lock)
-    except BaseException:
-        if created_lock:
-            acquired = read_lock(lock_path)
-            if acquired is not None and acquired.lock_token == lock.lock_token:
-                lock_path.unlink(missing_ok=True)
-        raise
+    updated, changed = update_tasks_md_text(tasks_md, task_id, owner, status)
+    if not changed:
+        raise SystemExit(
+            f"Task ID '{task_id}' not found in {tasks_path}.\n"
+            "Refusing to claim. Orchestrator should add the task first."
+        )
+    tasks_path.write_text(updated, encoding="utf-8")
+    write_lock(lock_path, lock, must_create=existing_lock is None)
     return lock_path
 
 

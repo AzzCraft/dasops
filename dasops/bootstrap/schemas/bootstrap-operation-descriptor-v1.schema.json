@@ -1,0 +1,41 @@
+{
+  "$id": "bootstrap-operation-descriptor/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Root and release pinned bootstrap operation descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "recordDigest", "signatureSubjectDigest", "descriptorId", "operation", "rootDigest", "toolReleaseDigest", "changeId", "taskId", "inputManifestDigest", "outputManifestDigest", "lockProfileDigest", "budgetProfileDigest", "validFrom", "validUntil", "signatures"],
+  "properties": {
+    "schema": {"const": "bootstrap-operation-descriptor/v1"},
+    "recordDigest": {"$ref": "#/$defs/digest"},
+    "signatureSubjectDigest": {"$ref": "#/$defs/digest"},
+    "descriptorId": {"$ref": "#/$defs/id"},
+    "operation": {"$ref": "#/$defs/operation"},
+    "rootDigest": {"$ref": "#/$defs/digest"},
+    "toolReleaseDigest": {"$ref": "#/$defs/digest"},
+    "changeId": {"$ref": "#/$defs/id"},
+    "taskId": {"$ref": "#/$defs/id"},
+    "inputManifestDigest": {"$ref": "#/$defs/digest"},
+    "outputManifestDigest": {"$ref": "#/$defs/digest"},
+    "lockProfileDigest": {"$ref": "#/$defs/digest"},
+    "budgetProfileDigest": {"$ref": "#/$defs/digest"},
+    "validFrom": {"type": "string", "format": "date-time"},
+    "validUntil": {"type": "string", "format": "date-time"},
+    "signatures": {"type": "array", "minItems": 3, "maxItems": 16, "items": {"$ref": "#/$defs/signature"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operation": {"enum": ["register_attempt", "cancel_attempt", "recover_receipt", "prepare_candidate", "publish_claim", "handoff_claim", "compensate_claim", "abandon_claim", "adopt_prepare", "adopt_publish", "adopt_cancel", "recover_publication"]},
+    "signature": {
+      "type": "object", "additionalProperties": false,
+      "required": ["keyFingerprint", "identity", "role", "algorithm", "signatureBase64", "signedAt"],
+      "properties": {
+        "keyFingerprint": {"$ref": "#/$defs/digest"}, "identity": {"$ref": "#/$defs/id"},
+        "role": {"type": "string", "minLength": 3}, "algorithm": {"const": "ed25519"},
+        "signatureBase64": {"type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$"},
+        "signedAt": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

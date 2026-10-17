@@ -13,8 +13,5 @@ Canonical source of truth:
 Consumption rules:
 
 - Treat `das-standard` as the only writable standard authority.
-- This standalone scaffold does not declare a suite/runtime closure. Materialize
-  governed closure artifacts only when the repository owner supplies real,
-  immutable references that validate against the applicable standard schema.
-- Record an approved local deviation only when it actually exists; do not add a
-  placeholder extension manifest to a new product repository.
+- Use `tooling_lock.json` and suite closure artifacts to pin the exact standard, runtime, and toolchain versions consumed by this repo.
+- If you need local deviations, record them in `local_extension_manifest.json` rather than editing the standard.

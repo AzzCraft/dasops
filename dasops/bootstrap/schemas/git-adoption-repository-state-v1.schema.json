@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"git-adoption-repository-state/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"git-adoption-repository-state/v1"},"recordDigest":{"$ref":"#/$defs/d"},"repositoryId":{"$ref":"#/$defs/d"},"repositoryPath":{"type":"string","pattern":"^/"},"role":{"enum":["old_bootstrap","new_canonical"]},"generation":{"type":"integer","minimum":0},"drained":{"type":"boolean"},"fenced":{"type":"boolean"},"fenceMode":{"enum":["open","prefenced","permanent"]},"updatedAt":{"type":["string","null"],"format":"date-time"}},
+  "required":["schema","recordDigest","repositoryId","repositoryPath","role","generation","drained","fenced","fenceMode","updatedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}}
+}

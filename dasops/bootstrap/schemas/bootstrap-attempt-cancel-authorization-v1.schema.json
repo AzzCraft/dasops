@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-attempt-cancel-authorization/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-attempt-cancel-authorization/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "attemptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "headDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "expectedState": {"enum": ["registered", "candidate_prepared", "claim_publication_pending"]},
+    "candidateAtMain": {"const": false},
+    "tokenDisposition": {"enum": ["not_generated", "destroyed"]},
+    "publicationWalDisposition": {"enum": ["absent", "disposed"]},
+    "residualsDisposition": {"const": "complete"},
+    "rootDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "authorizedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "attemptId", "headDigest", "expectedState", "candidateAtMain", "tokenDisposition", "publicationWalDisposition", "residualsDisposition", "rootDigest", "authorizedAt"]
+}

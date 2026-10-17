@@ -17,6 +17,15 @@ DEFAULT_REWRITES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\.\./standard-v1\.4\.0/"), "../standard/"),
     (re.compile(r"\.\./standard-v1\.4\.4/"), "../standard/"),
     (re.compile(r"\.\./standard-v1\.4\.5/"), "../standard/"),
+    (
+        re.compile(r"DAS_L2_v10_[1-6]_Commercial_Implementation_Package"),
+        "release-inputs/commercial/v1.0.0",
+    ),
+    (
+        re.compile(r"DAS_L2_v10_[1-6]_Release_Package_20260427"),
+        "DAS_TOOLS_v1_0_0",
+    ),
+    (re.compile(r"DAS_L2_v10_[1-6]_"), "DAS_TOOLS_v1_0_0_"),
 ]
 
 LINK_RE = re.compile(r"(?P<prefix>[!\[]?)\[(?P<text>[^\]]*)\]\((?P<target>[^)\s]+)(?P<title>\s+\"[^\"]*\")?\)")

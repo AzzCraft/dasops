@@ -1,0 +1,74 @@
+{
+  "$id": "protected-activation-challenge/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "challengeBase64": {
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "type": "string"
+    },
+    "challengeId": {
+      "pattern": "^[a-f0-9]{32}$",
+      "type": "string"
+    },
+    "claimGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "canonicalCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "issuedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "leaseGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "claim_activation",
+        "renewal_authorization",
+        "renewal_activation",
+        "release_authorization",
+        "completion_authorization"
+      ],
+      "type": "string"
+    },
+    "recordDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-activation-challenge/v1"
+    },
+    "taskId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "challengeId",
+    "challengeBase64",
+    "taskId",
+    "owner",
+    "claimGeneration",
+    "leaseGeneration",
+    "issuedAt",
+    "expiresAt",
+    "operation",
+    "canonicalCommit"
+  ],
+  "title": "Protected activation challenge v1",
+  "type": "object"
+}

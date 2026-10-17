@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azzcraft.com/cadence/schemas/common.schema.json",
+  "title": "Cadence Common Envelopes",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "traceId": {
+          "type": "string"
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kv": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "counters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "codes"
+      ]
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "scope": {
+          "type": "string"
+        },
+        "allocated": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "consumed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "remaining": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "termination": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "tokens_exhausted",
+                "time_exhausted",
+                "external_calls_exhausted",
+                "cancelled"
+              ]
+            }
+          },
+          "required": [
+            "code"
+          ]
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/budget"
+          }
+        }
+      },
+      "required": [
+        "scope",
+        "allocated",
+        "consumed",
+        "remaining",
+        "termination",
+        "children"
+      ]
+    },
+    "stageSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stageId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "degraded",
+            "error",
+            "cancelled"
+          ]
+        },
+        "timeMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "stageId",
+        "status",
+        "timeMs",
+        "codes"
+      ]
+    },
+    "errorEnvelope": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "invalidArgument",
+            "unauthorized",
+            "forbidden",
+            "notFound",
+            "conflict",
+            "rateLimited",
+            "timeout",
+            "unavailable",
+            "internal"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "object"
+        },
+        "correlation": {
+          "$ref": "#/$defs/correlation"
+        }
+      },
+      "required": [
+        "code",
+        "kind",
+        "message",
+        "retryable"
+      ]
+    }
+  }
+}

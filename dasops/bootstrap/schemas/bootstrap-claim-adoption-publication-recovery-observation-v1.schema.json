@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-claim-adoption-publication-recovery-observation/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-claim-adoption-publication-recovery-observation/v1"},
+    "recordDigest": {"$ref": "#/$defs/d"},
+    "operationId": {"$ref": "#/$defs/id"},
+    "packageId": {"$ref": "#/$defs/id"},
+    "observationProfileDigest": {"$ref": "#/$defs/d"},
+    "oldFenceDigest": {"$ref": "#/$defs/d"},
+    "newFenceDigest": {"$ref": "#/$defs/d"},
+    "oldFenceState": {"enum": ["recovery_deny", "permanent_noncanonical"]},
+    "newFenceState": {"const": "recovery_deny"},
+    "oldReadable": {"type": "boolean"},
+    "newReadable": {"type": "boolean"},
+    "oldMain": {"type": ["string", "null"], "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "newMain": {"type": ["string", "null"], "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "controllerAuthorityRef": {"type": "string", "pattern": "^https://"},
+    "observationRequestDigest": {"$ref": "#/$defs/d"},
+    "observationReceiptDigest": {"$ref": "#/$defs/d"},
+    "observedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": [
+    "schema", "recordDigest", "operationId", "packageId", "observationProfileDigest",
+    "oldFenceDigest", "newFenceDigest", "oldFenceState", "newFenceState", "oldReadable",
+    "newReadable", "oldMain", "newMain", "controllerAuthorityRef",
+    "observationRequestDigest", "observationReceiptDigest", "observedAt"
+  ],
+  "$defs": {
+    "d": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}
+  }
+}

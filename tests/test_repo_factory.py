@@ -1,6 +1,7 @@
-"""Regression tests for the truthful standalone v1.0 scaffold."""
+"""Tests for dasops.repo_factory — seed_machine_readable_artifacts."""
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,20 +10,43 @@ from dasops.repo_factory import seed_machine_readable_artifacts
 
 
 class TestSeedMachineReadableArtifacts(unittest.TestCase):
-    def test_seed_does_not_invent_governed_closure_artifacts(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
+    def test_seed_creates_tooling_lock(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
             seed_machine_readable_artifacts(repo)
-            self.assertFalse((repo / "tooling_lock.json").exists())
-            self.assertFalse((repo / "local_extension_manifest.json").exists())
-
-    def test_seed_preserves_owner_supplied_governed_artifacts(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
             lock = repo / "tooling_lock.json"
-            lock.write_text('{"ownerSupplied": true}\n', encoding="utf-8")
+            self.assertTrue(lock.exists())
+            data = json.loads(lock.read_text(encoding="utf-8"))
+            self.assertEqual(data["schemaVersion"], "1.0.0")
+            self.assertEqual(data["standardManifestVersion"], "1.4.0")
+            self.assertEqual(data["sourceOfTruth"]["kind"], "git")
+            self.assertEqual(data["sourceOfTruth"]["uri"], ".")
+            self.assertEqual(data["verifyRuntime"]["kind"], "package")
+            self.assertEqual(data["suiteLockRef"]["kind"], "file")
+            self.assertIsInstance(data["toolchain"], list)
+            self.assertTrue(data["toolchain"])
+
+    def test_seed_creates_extension_manifest(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
             seed_machine_readable_artifacts(repo)
-            self.assertEqual(lock.read_text(encoding="utf-8"), '{"ownerSupplied": true}\n')
+            ext = repo / "local_extension_manifest.json"
+            self.assertTrue(ext.exists())
+            data = json.loads(ext.read_text(encoding="utf-8"))
+            self.assertEqual(data["schemaVersion"], "1.0.0")
+            self.assertEqual(data["standardManifestVersion"], "1.4.0")
+            self.assertIsInstance(data["extensions"], list)
+            self.assertTrue(data["extensions"])
+            self.assertIn("compatibilityNote", data["extensions"][0])
+
+    def test_seed_does_not_overwrite_existing(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            lock = repo / "tooling_lock.json"
+            lock.write_text('{"custom": true}', encoding="utf-8")
+            seed_machine_readable_artifacts(repo)
+            data = json.loads(lock.read_text(encoding="utf-8"))
+            self.assertTrue(data.get("custom"))
 
 
 if __name__ == "__main__":

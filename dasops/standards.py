@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
+
+from .bundle_preview import resolve_preview, resolve_facts_preview
 
 
 PACK_ROLE_ALIASES = {
@@ -42,6 +45,10 @@ def _release_root_for_repo_root(repo_root: Path) -> Path | None:
 def _candidate_standard_roots(repo_root: Path, override: str | None) -> list[Path]:
     if override:
         return [Path(override).expanduser().resolve()]
+
+    environment_override = os.environ.get("DAS_STANDARD_ROOT", "").strip()
+    if environment_override:
+        return [Path(environment_override).expanduser().resolve()]
 
     release_root = _release_root_for_repo_root(repo_root)
     if release_root is not None:

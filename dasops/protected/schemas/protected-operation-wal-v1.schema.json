@@ -1,0 +1,101 @@
+{
+  "$id": "protected-operation-wal/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "candidateCommit": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "changeId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "claim",
+        "renew",
+        "release",
+        "reclaim",
+        "complete",
+        "route_prepare",
+        "route_publish",
+        "route_abort"
+      ],
+      "type": "string"
+    },
+    "operationId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "phase": {
+      "enum": [
+        "intent",
+        "started",
+        "candidate_prepared",
+        "cas_pending",
+        "cas_applied",
+        "readback_complete",
+        "aborted"
+      ],
+      "type": "string"
+    },
+    "recordDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-operation-wal/v1"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "tokenHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "workerLockPath": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "operationId",
+    "idempotencyKey",
+    "operation",
+    "phase",
+    "baseCommit",
+    "candidateCommit",
+    "createdAt",
+    "changeId",
+    "taskId",
+    "owner",
+    "tokenHash",
+    "workerLockPath"
+  ],
+  "title": "Protected operation WAL v1",
+  "type": "object"
+}

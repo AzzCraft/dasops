@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-adoption-publish-wal/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-adoption-publish-wal/v1"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"packageId":{"$ref":"#/$defs/id"},"requestDigest":{"$ref":"#/$defs/d"},"phase":{"enum":["publish_intent","old_drained","old_prefenced","new_staged","new_main_created","staging_removed","old_permanent_fenced","registry_adopted","result_written","published_pending_activation","consumed"]},"oldMain":{"$ref":"#/$defs/o"},"candidateCommit":{"$ref":"#/$defs/o"},"lifecycleDigest":{"$ref":"#/$defs/d"},"resultDigest":{"type":["string","null"],"pattern":"^sha256:[0-9a-f]{64}$"},"recordedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","packageId","requestDigest","phase","oldMain","candidateCommit","lifecycleDigest","resultDigest","recordedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"o":{"type":"string","pattern":"^[0-9a-f]{40}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

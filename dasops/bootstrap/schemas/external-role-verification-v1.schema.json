@@ -1,0 +1,32 @@
+{
+  "$id": "external-role-verification/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Injected independent role verification result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "recordDigest", "purpose", "subjectDigest", "requiredRoles", "threshold", "verifiedSigners", "verifierAuthorityRef", "verifierReceiptDigest", "verifiedAt"],
+  "properties": {
+    "schema": {"const": "external-role-verification/v1"},
+    "recordDigest": {"$ref": "#/$defs/digest"},
+    "purpose": {"enum": ["bootstrap_root", "tool_source_decision", "tool_release", "bootstrap_operation_descriptor", "bootstrap_claim_candidate_receipt", "bootstrap_publication_receipt", "bootstrap_handoff_receipt", "bootstrap_early_closure_receipt", "bootstrap_adoption_approval", "bootstrap_adoption_publish_result", "bootstrap_adoption_cancel_authorization", "bootstrap_adoption_disposition_tombstone", "bootstrap_adoption_fence_release_receipt", "bootstrap_adoption_cancel_result", "bootstrap_adoption_activation_receipt", "bootstrap_candidate_verification_result", "foundation_program_selector_head", "verification_profile_transition_head"]},
+    "subjectDigest": {"$ref": "#/$defs/digest"},
+    "requiredRoles": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 3}},
+    "threshold": {"type": "integer", "minimum": 1, "maximum": 16},
+    "verifiedSigners": {
+      "type": "array", "minItems": 1, "maxItems": 32,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["role", "identity", "keyFingerprint"],
+        "properties": {
+          "role": {"type": "string", "minLength": 3},
+          "identity": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"},
+          "keyFingerprint": {"$ref": "#/$defs/digest"}
+        }
+      }
+    },
+    "verifierAuthorityRef": {"type": "string", "minLength": 3, "not": {"pattern": "^local:"}},
+    "verifierReceiptDigest": {"$ref": "#/$defs/digest"},
+    "verifiedAt": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+}

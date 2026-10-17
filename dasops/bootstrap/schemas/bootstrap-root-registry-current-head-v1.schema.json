@@ -1,0 +1,26 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"bootstrap-root-registry-current-head/v1",
+  "type":"object",
+  "additionalProperties":false,
+  "properties":{
+    "schema":{"const":"bootstrap-root-registry-current-head/v1"},
+    "recordDigest":{"$ref":"#/$defs/d"},
+    "headId":{"$ref":"#/$defs/id"},
+    "registryId":{"$ref":"#/$defs/id"},
+    "rootId":{"$ref":"#/$defs/id"},
+    "rootEpoch":{"type":"integer","minimum":1},
+    "rootDigest":{"$ref":"#/$defs/d"},
+    "rootVerificationReceiptDigest":{"$ref":"#/$defs/d"},
+    "registryProfileDigest":{"$ref":"#/$defs/d"},
+    "registrySequence":{"type":"integer","minimum":0},
+    "previousHeadDigest":{"oneOf":[{"$ref":"#/$defs/d"},{"type":"null"}]},
+    "transitionDigest":{"oneOf":[{"$ref":"#/$defs/d"},{"type":"null"}]},
+    "activatedAt":{"type":"string","format":"date-time"}
+  },
+  "required":["schema","recordDigest","headId","registryId","rootId","rootEpoch","rootDigest","rootVerificationReceiptDigest","registryProfileDigest","registrySequence","previousHeadDigest","transitionDigest","activatedAt"],
+  "$defs":{
+    "d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"}
+  }
+}

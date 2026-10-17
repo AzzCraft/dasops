@@ -7,6 +7,7 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
 from tests._root_contract import repository_root_for_test_file
 
 

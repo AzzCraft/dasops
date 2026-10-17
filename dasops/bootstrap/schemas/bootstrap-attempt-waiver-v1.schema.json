@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-attempt-waiver/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-attempt-waiver/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "waiverId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "attemptIntentDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "rootDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "registrationKind": {"enum": ["normal_original", "promoted_original", "recovered_alternate"]},
+    "authorityProfileDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "requiredRoles": {"type": "array", "minItems": 3, "uniqueItems": true, "items": {"enum": ["independent_verifier", "orchestrator", "repository_owner"]}},
+    "issuedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "waiverId", "operationId", "attemptIntentDigest", "rootDigest", "registrationKind", "authorityProfileDigest", "requiredRoles", "issuedAt", "expiresAt"]
+}

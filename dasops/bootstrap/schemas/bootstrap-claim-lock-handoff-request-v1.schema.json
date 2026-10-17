@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-claim-lock-handoff-request/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-claim-lock-handoff-request/v1"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"attemptId":{"$ref":"#/$defs/id"},"claimedHeadDigest":{"$ref":"#/$defs/d"},"publicationReceiptDigest":{"$ref":"#/$defs/d"},"challengeDigest":{"$ref":"#/$defs/d"},"responseDigest":{"$ref":"#/$defs/d"},"tokenHash":{"$ref":"#/$defs/d"},"worker":{"type":"string","minLength":1,"maxLength":128},"destinationLockPath":{"type":"string","pattern":"^/"},"expectedCandidateCommit":{"$ref":"#/$defs/o"},"requestedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","attemptId","claimedHeadDigest","publicationReceiptDigest","challengeDigest","responseDigest","tokenHash","worker","destinationLockPath","expectedCandidateCommit","requestedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"o":{"type":"string","pattern":"^[0-9a-f]{40}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

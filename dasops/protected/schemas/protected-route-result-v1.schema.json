@@ -1,0 +1,73 @@
+{
+  "$id": "protected-route-result/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approvalDigest": {
+      "anyOf": [
+        {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "baseCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "candidateCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "canonicalReadback": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "completedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "prepared",
+        "published",
+        "aborted_pre_cas",
+        "conflict"
+      ],
+      "type": "string"
+    },
+    "recordDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "requestDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-route-result/v1"
+    },
+    "verifiedRoleBindingsDigest": {
+      "anyOf": [
+        {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+        {"type": "null"}
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "requestId",
+    "requestDigest",
+    "outcome",
+    "baseCommit",
+    "candidateCommit",
+    "canonicalReadback",
+    "approvalDigest",
+    "verifiedRoleBindingsDigest",
+    "completedAt"
+  ],
+  "title": "Protected route result v1",
+  "type": "object"
+}

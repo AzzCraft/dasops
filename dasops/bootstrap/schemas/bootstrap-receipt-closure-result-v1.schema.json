@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-receipt-closure-result/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-receipt-closure-result/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "attemptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "headDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "priorSlotDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "slotDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "closureVariant": {"const": "normal_original"},
+    "receiptDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "completedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "operationId", "attemptId", "headDigest", "priorSlotDigest", "slotDigest", "closureVariant", "receiptDigest", "completedAt"]
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-receipt-slot/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-receipt-slot/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "slotId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "headDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "attemptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "slotSequence": {"const": "00000000000000000000"},
+    "generation": {"type": "integer", "minimum": 0, "maximum": 1},
+    "status": {"enum": ["open", "closed"]},
+    "closureVariant": {"type": ["string", "null"], "enum": [null, "normal_original", "promoted_original", "recovered_alternate"]},
+    "receiptDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "previousSlotDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "openedAt": {"type": "string", "format": "date-time"},
+    "closedAt": {"type": ["string", "null"], "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "slotId", "headDigest", "attemptId", "slotSequence", "generation", "status", "closureVariant", "receiptDigest", "previousSlotDigest", "openedAt", "closedAt"]
+}

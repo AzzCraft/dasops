@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-adoption-approval-subject/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-adoption-approval-subject/v1"},"recordDigest":{"$ref":"#/$defs/d"},"subjectId":{"$ref":"#/$defs/id"},"packageDigest":{"$ref":"#/$defs/d"},"rootDigest":{"$ref":"#/$defs/d"},"attemptId":{"$ref":"#/$defs/id"},"oldMain":{"$ref":"#/$defs/o"},"newRepositoryPath":{"type":"string","pattern":"^/"},"legacyTokenHash":{"$ref":"#/$defs/d"},"adoptionTokenHash":{"$ref":"#/$defs/d"},"keyEnvelopeDigest":{"$ref":"#/$defs/d"},"generation":{"type":"integer","minimum":1},"requiredRoles":{"type":"array","minItems":3,"uniqueItems":true,"items":{"type":"string","minLength":3}},"createdAt":{"type":"string","format":"date-time"},"expiresAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","subjectId","packageDigest","rootDigest","attemptId","oldMain","newRepositoryPath","legacyTokenHash","adoptionTokenHash","keyEnvelopeDigest","generation","requiredRoles","createdAt","expiresAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"o":{"type":"string","pattern":"^[0-9a-f]{40}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

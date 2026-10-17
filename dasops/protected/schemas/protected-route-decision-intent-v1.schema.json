@@ -1,0 +1,26 @@
+{
+  "$id": "protected-route-decision-intent/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptedAt": {"format": "date-time", "type": "string"},
+    "action": {"enum": ["abort", "publish"], "type": "string"},
+    "approvalDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "canonicalHead": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "candidateCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "requestDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "requestId": {"type": "string"},
+    "schema": {"const": "protected-route-decision-intent/v1"},
+    "supersededDecisionDigest": {
+      "anyOf": [
+        {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "verifiedRoleBindingsDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}
+  },
+  "required": ["schema", "recordDigest", "requestId", "requestDigest", "candidateCommit", "action", "canonicalHead", "approvalDigest", "verifiedRoleBindingsDigest", "supersededDecisionDigest", "acceptedAt"],
+  "title": "Protected route decision intent v1",
+  "type": "object"
+}

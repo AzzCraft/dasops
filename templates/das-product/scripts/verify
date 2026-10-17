@@ -26,12 +26,18 @@ REQUIRED_FILES = [
     REPO_ROOT / "AGENTS.override.md",
     REPO_ROOT / "CLAUDE.md",
     REPO_ROOT / "STANDARD_REF.md",
+    REPO_ROOT / "tooling_lock.json",
+    REPO_ROOT / "local_extension_manifest.json",
     REPO_ROOT / "progress.txt",
     REPO_ROOT / "openspec" / "config.yaml",
     REPO_ROOT / "openspec" / "schemas" / "das-standard" / "schema.yaml",
     REPO_ROOT / "prompts" / "orchestrator.md",
     REPO_ROOT / "prompts" / "worker.md",
     REPO_ROOT / "scripts" / "run_worker_codex.sh",
+    REPO_ROOT / "scripts" / "install_cadence_vendor.sh",
+    REPO_ROOT / "cadencew",
+    REPO_ROOT / "cadence.yaml",
+    REPO_ROOT / "vendor" / "README.md",
 ]
 
 LOCK_KEYS = {
@@ -47,6 +53,12 @@ LOCK_KEYS = {
 }
 TASK_INDEX_HEADER = "| Task ID | Title | Owner | Status | Depends on | Verify gate |"
 TASK_ALLOWED_STATUSES = {"TODO", "IN_PROGRESS", "DONE", "BLOCKED", "PROPOSED"}
+
+TOOLING_LOCK_REQUIRED_KEYS = {"schemaVersion", "standardManifestVersion", "sourceOfTruth", "verifyRuntime"}
+TOOLING_LOCK_REF_KEYS = {"kind", "uri", "pinType", "pinValue"}
+EXTENSION_MANIFEST_REQUIRED_KEYS = {"schemaVersion", "standardManifestVersion", "extensions"}
+
+LEGACY_BASELINE = "unified" + "-current-baseline"
 
 
 def fail(message: str) -> int:
@@ -74,11 +86,17 @@ def check_seed_contract() -> int:
     if legacy.exists():
         return fail("Found copied standard doc. Use STANDARD_REF.md instead.")
 
+    cadence_yaml = (REPO_ROOT / "cadence.yaml").read_text(encoding="utf-8", errors="replace")
+    if LEGACY_BASELINE in cadence_yaml:
+        return fail(f"cadence.yaml still references {LEGACY_BASELINE}")
+    if "core-v146-baseline" not in cadence_yaml:
+        return fail("cadence.yaml must pin core-v146-baseline")
+
     config_text = (REPO_ROOT / "openspec" / "config.yaml").read_text(encoding="utf-8", errors="replace")
     if "STANDARD_REF.md" not in config_text:
         return fail("openspec/config.yaml must reference STANDARD_REF.md")
 
-    ok("seed contract uses STANDARD_REF.md and local DAS/OpenSpec artifacts")
+    ok("seed contract uses STANDARD_REF.md and v1.4.x artifacts")
     return 0
 
 
@@ -230,6 +248,73 @@ def check_stale_lock_semantics() -> int:
     return 0
 
 
+def check_tooling_lock_schema() -> int:
+    path = REPO_ROOT / "tooling_lock.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, ValueError) as exc:
+        return fail(f"tooling_lock.json is not valid JSON: {exc}")
+    if not isinstance(data, dict):
+        return fail("tooling_lock.json root must be an object")
+    missing = sorted(TOOLING_LOCK_REQUIRED_KEYS - set(data))
+    if missing:
+        return fail(f"tooling_lock.json missing required keys: {missing}")
+    for ref_key in ("sourceOfTruth", "verifyRuntime"):
+        ref = data.get(ref_key)
+        if not isinstance(ref, dict):
+            return fail(f"tooling_lock.json {ref_key} must be an object")
+        if (
+            ref_key == "sourceOfTruth"
+            and str(ref.get("pinState", "")).lower() == "pending"
+            and not ref.get("pinValue")
+        ):
+            return fail("tooling_lock.json sourceOfTruth.pinState is pending; sourceOfTruth.pinValue must be a real git commit before verify can pass")
+        ref_missing = sorted(TOOLING_LOCK_REF_KEYS - set(ref))
+        if ref_missing:
+            return fail(f"tooling_lock.json {ref_key} missing keys: {ref_missing}")
+    # Reject unresolved pinValue in sourceOfTruth
+    sot = data.get("sourceOfTruth", {})
+    pin_type = str(sot.get("pinType", "")).strip()
+    pin = str(sot.get("pinValue", "")).strip()
+    if sot.get("kind") == "git" and pin_type not in {"commit", "tag"}:
+        return fail(f"tooling_lock.json sourceOfTruth.pinType must be commit or tag: {pin_type!r}")
+    unresolved_pins = ("replace-with-product-commit", "fake-sha256", "TBD", "TODO", "PLACEHOLDER", "")
+    if pin.lower() in (p.lower() for p in unresolved_pins):
+        return fail(f"tooling_lock.json sourceOfTruth.pinValue is unresolved: {pin!r}")
+    if pin_type == "commit" and not re.fullmatch(r"[0-9a-f]{7,40}", pin):
+        return fail(f"tooling_lock.json sourceOfTruth.pinValue must be a git commit hash: {pin!r}")
+    ok("tooling_lock.json schema validated")
+    return 0
+
+
+def check_extension_manifest_schema() -> int:
+    path = REPO_ROOT / "local_extension_manifest.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, ValueError) as exc:
+        return fail(f"local_extension_manifest.json is not valid JSON: {exc}")
+    if not isinstance(data, dict):
+        return fail("local_extension_manifest.json root must be an object")
+    missing = sorted(EXTENSION_MANIFEST_REQUIRED_KEYS - set(data))
+    if missing:
+        return fail(f"local_extension_manifest.json missing required keys: {missing}")
+    if not isinstance(data.get("extensions"), list):
+        return fail("local_extension_manifest.json extensions must be an array")
+    ok("local_extension_manifest.json schema validated")
+    return 0
+
+
+def maybe_run_cadence() -> int:
+    cadence_dir = REPO_ROOT / "vendor" / "cadence"
+    cadencew = REPO_ROOT / "cadencew"
+    if cadence_dir.exists() and cadencew.exists():
+        print("\n[CADENCE] vendor/cadence detected; running cadence verify --profile dev")
+        process = subprocess.run(["./cadencew", "verify", "--profile", "dev"], cwd=str(REPO_ROOT))
+        if process.returncode != 0:
+            return fail("Cadence verify failed")
+    return 0
+
+
 def main() -> int:
     rc = 0
     rc |= check_exists()
@@ -240,7 +325,11 @@ def main() -> int:
     rc |= check_task_lock_schema()
     rc |= check_tasks_index_contract()
     rc |= check_stale_lock_semantics()
+    rc |= check_tooling_lock_schema()
+    rc |= check_extension_manifest_schema()
     rc |= check_master_doc_minimum()
+    if rc == 0:
+        rc |= maybe_run_cadence()
     if rc == 0:
         print("\nAll verify checks passed.")
     return rc

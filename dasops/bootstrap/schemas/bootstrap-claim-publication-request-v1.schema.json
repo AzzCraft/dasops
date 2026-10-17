@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-claim-publication-request/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-claim-publication-request/v1"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"attemptId":{"$ref":"#/$defs/id"},"candidatePreparedHeadDigest":{"$ref":"#/$defs/d"},"candidateResultDigest":{"$ref":"#/$defs/d"},"candidateReceiptDigest":{"$ref":"#/$defs/d"},"candidateReceiptVerificationDigest":{"$ref":"#/$defs/d"},"baseCommit":{"$ref":"#/$defs/o"},"candidateCommit":{"$ref":"#/$defs/o"},"tokenHash":{"$ref":"#/$defs/d"},"requestedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","attemptId","candidatePreparedHeadDigest","candidateResultDigest","candidateReceiptDigest","candidateReceiptVerificationDigest","baseCommit","candidateCommit","tokenHash","requestedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"o":{"type":"string","pattern":"^[0-9a-f]{40}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

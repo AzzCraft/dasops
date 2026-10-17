@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-claim-adoption-publication-recovery-operation-head/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-claim-adoption-publication-recovery-operation-head/v1"},
+    "recordDigest": {"$ref": "#/$defs/d"},
+    "operationId": {"$ref": "#/$defs/id"},
+    "packageId": {"$ref": "#/$defs/id"},
+    "packageDigest": {"$ref": "#/$defs/d"},
+    "authorizationDigest": {"$ref": "#/$defs/d"},
+    "authorityDenyDigest": {"$ref": "#/$defs/d"},
+    "sequence": {"type": "integer", "minimum": 0, "maximum": 4},
+    "state": {"enum": ["recovery_prepared", "dual_fences_committed", "observations_committed", "abort_selected", "success_selected", "ambiguous_blocked", "recovery_closed"]},
+    "previousHeadDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "oldFenceDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "newFenceDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "observationDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "selectedOutcome": {"type": ["string", "null"], "enum": [null, "abort", "success", "ambiguous"]},
+    "branchClosureDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "branchClosureValidationDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "recordedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": [
+    "schema", "recordDigest", "operationId", "packageId", "packageDigest", "authorizationDigest",
+    "authorityDenyDigest", "sequence", "state", "previousHeadDigest", "oldFenceDigest",
+    "newFenceDigest", "observationDigest", "selectedOutcome", "branchClosureDigest",
+    "branchClosureValidationDigest", "recordedAt"
+  ],
+  "oneOf": [
+    {"properties": {"sequence": {"const": 0}, "state": {"const": "recovery_prepared"}, "previousHeadDigest": {"const": null}, "oldFenceDigest": {"const": null}, "newFenceDigest": {"const": null}, "observationDigest": {"const": null}, "selectedOutcome": {"const": null}, "branchClosureDigest": {"const": null}, "branchClosureValidationDigest": {"const": null}}},
+    {"properties": {"sequence": {"const": 1}, "state": {"const": "dual_fences_committed"}, "previousHeadDigest": {"$ref": "#/$defs/d"}, "oldFenceDigest": {"$ref": "#/$defs/d"}, "newFenceDigest": {"$ref": "#/$defs/d"}, "observationDigest": {"const": null}, "selectedOutcome": {"const": null}, "branchClosureDigest": {"const": null}, "branchClosureValidationDigest": {"const": null}}},
+    {"properties": {"sequence": {"const": 2}, "state": {"const": "observations_committed"}, "previousHeadDigest": {"$ref": "#/$defs/d"}, "oldFenceDigest": {"$ref": "#/$defs/d"}, "newFenceDigest": {"$ref": "#/$defs/d"}, "observationDigest": {"$ref": "#/$defs/d"}, "selectedOutcome": {"const": null}, "branchClosureDigest": {"const": null}, "branchClosureValidationDigest": {"const": null}}},
+    {"properties": {"sequence": {"const": 3}, "state": {"const": "abort_selected"}, "previousHeadDigest": {"$ref": "#/$defs/d"}, "oldFenceDigest": {"$ref": "#/$defs/d"}, "newFenceDigest": {"$ref": "#/$defs/d"}, "observationDigest": {"$ref": "#/$defs/d"}, "selectedOutcome": {"const": "abort"}, "branchClosureDigest": {"const": null}, "branchClosureValidationDigest": {"const": null}}},
+    {"properties": {"sequence": {"const": 3}, "state": {"const": "success_selected"}, "previousHeadDigest": {"$ref": "#/$defs/d"}, "oldFenceDigest": {"$ref": "#/$defs/d"}, "newFenceDigest": {"$ref": "#/$defs/d"}, "observationDigest": {"$ref": "#/$defs/d"}, "selectedOutcome": {"const": "success"}, "branchClosureDigest": {"const": null}, "branchClosureValidationDigest": {"const": null}}},
+    {"properties": {"sequence": {"const": 3}, "state": {"const": "ambiguous_blocked"}, "previousHeadDigest": {"$ref": "#/$defs/d"}, "oldFenceDigest": {"$ref": "#/$defs/d"}, "newFenceDigest": {"$ref": "#/$defs/d"}, "observationDigest": {"$ref": "#/$defs/d"}, "selectedOutcome": {"const": "ambiguous"}, "branchClosureDigest": {"const": null}, "branchClosureValidationDigest": {"const": null}}},
+    {"properties": {"sequence": {"const": 4}, "state": {"const": "recovery_closed"}, "previousHeadDigest": {"$ref": "#/$defs/d"}, "oldFenceDigest": {"$ref": "#/$defs/d"}, "newFenceDigest": {"$ref": "#/$defs/d"}, "observationDigest": {"$ref": "#/$defs/d"}, "selectedOutcome": {"enum": ["abort", "success"]}, "branchClosureDigest": {"$ref": "#/$defs/d"}, "branchClosureValidationDigest": {"$ref": "#/$defs/d"}}}
+  ],
+  "$defs": {
+    "d": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}
+  }
+}

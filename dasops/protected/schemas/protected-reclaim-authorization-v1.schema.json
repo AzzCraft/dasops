@@ -1,0 +1,49 @@
+{
+  "$id": "protected-reclaim-authorization/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approvalSetDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "authorityRef": {"minLength": 1, "type": "string"},
+    "authorizationId": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+    "canonicalCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "changeId": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+    "claimGeneration": {"minimum": 1, "type": "integer"},
+    "expectedOwner": {"minLength": 1, "type": "string"},
+    "expiresAt": {"format": "date-time", "type": "string"},
+    "issuedAt": {"format": "date-time", "type": "string"},
+    "leaseGeneration": {"minimum": 1, "type": "integer"},
+    "priorStateDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "reason": {"const": "lease_expired"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "requiredRoles": {
+      "items": {"enum": ["anchor_owner", "task_governance", "verifier"], "type": "string"},
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "schema": {"const": "protected-reclaim-authorization/v1"},
+    "taskId": {"pattern": "^[A-Za-z][A-Za-z0-9._-]{1,127}$", "type": "string"}
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "authorizationId",
+    "authorityRef",
+    "approvalSetDigest",
+    "changeId",
+    "taskId",
+    "expectedOwner",
+    "claimGeneration",
+    "leaseGeneration",
+    "canonicalCommit",
+    "priorStateDigest",
+    "reason",
+    "requiredRoles",
+    "issuedAt",
+    "expiresAt"
+  ],
+  "title": "Protected reclaim authorization v1",
+  "type": "object"
+}

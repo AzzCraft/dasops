@@ -73,6 +73,9 @@ REQUIRED_TEMPLATE_FILES = [
     "STANDARD_REF.md",
     "BUILD_REQUIREMENTS.md",
     "VERIFY_REQUIREMENTS.md",
+    "tooling_lock.json",
+    "local_extension_manifest.json",
+    "cadence.yaml",
     "scripts/verify",
     "scripts/verify-backend",
     "scripts/verify-frontend",
@@ -95,29 +98,87 @@ FAIL_CLOSED_SCRIPTS = {
     "scripts/verify-contracts": "fail-closed",
 }
 
-STRUCTURED_ARTIFACT_RULES: dict[str, dict[str, object]] = {}
+STRUCTURED_ARTIFACT_RULES = {
+    "tooling_lock.json": {
+        "requiredKeys": [
+            "schemaVersion",
+            "standardManifestVersion",
+            "sourceOfTruth",
+            "verifyRuntime",
+            "suiteVersionClosureRef",
+            "suiteLockRef",
+            "verifyRegistryRef",
+            "toolchain",
+        ],
+        "shapeChecks": {
+            "sourceOfTruth": dict,
+            "verifyRuntime": dict,
+            "suiteVersionClosureRef": dict,
+            "suiteLockRef": dict,
+            "verifyRegistryRef": dict,
+            "toolchain": list,
+        },
+    },
+    "local_extension_manifest.json": {
+        "requiredKeys": ["schemaVersion", "standardManifestVersion", "extensions"],
+        "shapeChecks": {
+            "extensions": list,
+        },
+    },
+}
 
 COMMAND_PARITY_RULES = {
+    "factoryReadmeCreate": ("README.md", "python3 -m dasops create"),
+    "factoryReadmeVerify": ("README.md", "./scripts/verify"),
+    "factoryReadmeGui": ("README.md", "streamlit run gui/app.py"),
+    "factoryUserManualGui": ("docs/USER_MANUAL.md", "streamlit run gui/app.py"),
+    "factoryUserManualVerify": ("docs/USER_MANUAL.md", "./scripts/verify"),
+    "factoryUserManualVendorVerify": ("docs/USER_MANUAL.md", "vendor/cadence/cadence-oss/scripts/verify"),
+    "factoryUserManualCadenceCloneFailClosed": ("docs/USER_MANUAL.md", "Clone mode is fail-closed"),
+    "factoryUserManualCadenceRuntimeExec": ("docs/USER_MANUAL.md", "Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."),
     "factoryUserManualClaimReady": ("docs/USER_MANUAL.md", "dasops claim-ready --change-id add-login"),
     "templateReadmeVerify": ("templates/das-product/README.md", "./scripts/verify"),
     "templateReadmeClaimReady": ("templates/das-product/README.md", "dasops claim-ready --change-id <change-id> --owner worker01"),
+    "templateReadmeCadenceClone": ("templates/das-product/README.md", "./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>"),
+    "templateReadmeCadenceCloneFailClosed": ("templates/das-product/README.md", "fail-closed unless you pass `--git-base`, `--org`, or set `DAS_SUITE_GIT_BASE`"),
+    "templateReadmeCadenceRuntimeExec": ("templates/das-product/README.md", "Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."),
     "templateUserManualVerify": ("templates/das-product/docs/USER_MANUAL.md", "./scripts/verify"),
     "templateUserManualClaimReady": ("templates/das-product/docs/USER_MANUAL.md", "dasops claim-ready --change-id add-login"),
+    "templateUserManualCadencew": ("templates/das-product/docs/USER_MANUAL.md", "./cadencew verify --profile dev"),
+    "templateUserManualCadenceClone": ("templates/das-product/docs/USER_MANUAL.md", "./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>"),
+    "templateUserManualCadenceCloneFailClosed": ("templates/das-product/docs/USER_MANUAL.md", "Clone mode is fail-closed"),
+    "templateUserManualCadenceRuntimeExec": ("templates/das-product/docs/USER_MANUAL.md", "Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."),
     "templateOrchestratorStatuses": ("templates/das-product/prompts/orchestrator.md", "Status values are limited to: `TODO`, `IN_PROGRESS`, `DONE`, `BLOCKED`, `PROPOSED`."),
     "templateOrchestratorTaskStatuses": ("templates/das-product/prompts/orchestrator.md", "- Status: `TODO` or `IN_PROGRESS` or `DONE` or `BLOCKED` or `PROPOSED`"),
+    "guiVerifyHint": ("gui/app.py", "./scripts/verify"),
+    "guiCreateButton": ("gui/app.py", "Create product repo"),
     "factoryReadmeDoctor": ("README.md", "dasops doctor"),
     "templateReadmeDoctor": ("templates/das-product/README.md", "dasops doctor"),
     "factoryReadmeClaimReady": ("README.md", "dasops claim-ready"),
+    "factoryReadmeStartTask": ("README.md", "dasops start-task"),
     "templateReadmeStartTask": ("templates/das-product/README.md", "dasops start-task"),
     "templateUserManualStartTask": ("templates/das-product/docs/USER_MANUAL.md", "dasops start-task"),
+    # GUI-vs-CLI state divergence rules: ensure GUI references same commands
+    "guiClaimReady": ("gui/app.py", "dasops claim-ready"),
+    "guiStartTask": ("gui/app.py", "dasops start-task"),
+    "guiDoctor": ("gui/app.py", "dasops doctor"),
+    "guiTaskStatuses": ("gui/app.py", "TODO"),
     # Manual-page drift: user manual must reference full verify flow
     "templateUserManualVerifyBackend": ("templates/das-product/docs/USER_MANUAL.md", "scripts/verify-backend"),
     "templateUserManualVerifyFrontend": ("templates/das-product/docs/USER_MANUAL.md", "scripts/verify-frontend"),
     "factoryUserManualDoctor": ("docs/USER_MANUAL.md", "dasops doctor"),
     "factoryUserManualStartTask": ("docs/USER_MANUAL.md", "dasops start-task"),
+    "factoryUserManualBaselineRatchet": ("docs/USER_MANUAL.md", "baseline ratchet"),
     "templateReadmeVisualRegression": ("templates/das-product/README.md", "visual regression"),
     "templateUserManualBaselineRatchet": ("templates/das-product/docs/USER_MANUAL.md", "baseline ratchet"),
     "templateUserManualVisualMatrix": ("templates/das-product/docs/USER_MANUAL.md", "visualMatrix"),
+    "guiVisualRegressionHint": ("gui/app.py", "baseline ratchet"),
+    "guiVisualMatrixHint": ("gui/app.py", "visualMatrix"),
+    "guiCadenceCloneWarning": ("gui/app.py", "real Git base or an explicit org"),
+    "guiCadenceRuntimeExecWarning": ("gui/app.py", "Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."),
+    "templateVendorReadmeCadenceClone": ("templates/das-product/vendor/README.md", "./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>"),
+    "templateVendorReadmeCadenceCloneFailClosed": ("templates/das-product/vendor/README.md", "Clone mode is fail-closed"),
+    "templateVendorReadmeCadenceRuntimeExec": ("templates/das-product/vendor/README.md", "Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."),
 }
 
 UNSUPPORTED_HINT_RULES = {
@@ -401,10 +462,6 @@ def run_template_audit(factory_root: Path) -> TemplateAuditReport:
     command_parity_checks: dict[str, dict[str, object]] = {}
     for label, (rel, needle) in COMMAND_PARITY_RULES.items():
         path = factory_root / rel
-        if (label.startswith("gui") or label in {"factoryReadmeGui", "factoryUserManualGui"}) and not (
-            factory_root / "gui" / "app.py"
-        ).is_file():
-            continue
         ok = path.exists() and needle in path.read_text(encoding="utf-8")
         command_parity[label] = ok
         command_parity_checks[label] = {

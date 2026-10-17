@@ -12,3 +12,4 @@
 | [TEMPLATE_SEEDING_POLICY.md](TEMPLATE_SEEDING_POLICY.md) | Template seeding policy |
 | [USER_MANUAL.md](USER_MANUAL.md) | User manual |
 | [VERIFY_POLICY.md](VERIFY_POLICY.md) | Verification policy and layers |
+| [BOOTSTRAP_AUTHORITY_MIGRATION.md](security/BOOTSTRAP_AUTHORITY_MIGRATION.md) | Bootstrap driver identity, time and configuration upgrade |

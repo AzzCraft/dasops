@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-attempt-intent/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-attempt-intent/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "intentId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "attemptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "rootDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "changeId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "taskId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "worker": {"type": "string", "minLength": 1, "maxLength": 128},
+    "baseCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "registrationKind": {"enum": ["normal_original", "promoted_original", "recovered_alternate"]},
+    "tokenState": {"const": "not_generated"},
+    "priorTerminalHeadDigests": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+    "issuedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "intentId", "operationId", "attemptId", "rootDigest", "changeId", "taskId", "worker", "baseCommit", "registrationKind", "tokenState", "priorTerminalHeadDigests", "issuedAt", "expiresAt"]
+}

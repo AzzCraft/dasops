@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-claim-early-closure-wal/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-claim-early-closure-wal/v1"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"operation":{"enum":["compensate_claim","abandon_claim"]},"requestDigest":{"$ref":"#/$defs/d"},"phase":{"enum":["closure_intent","cas_started","cas_reverted","token_disposed","registry_terminal","slot_closed"]},"attemptId":{"$ref":"#/$defs/id"},"baseCommit":{"$ref":"#/$defs/o"},"candidateCommit":{"$ref":"#/$defs/o"},"registryHeadDigest":{"$ref":"#/$defs/d"},"resultDigest":{"type":["string","null"],"pattern":"^sha256:[0-9a-f]{64}$"},"recordedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","operation","requestDigest","phase","attemptId","baseCommit","candidateCommit","registryHeadDigest","resultDigest","recordedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"o":{"type":"string","pattern":"^[0-9a-f]{40}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

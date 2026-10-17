@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"external-cryptographic-verification-receipt/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"external-cryptographic-verification-receipt/v1"},"recordDigest":{"$ref":"#/$defs/d"},"receiptId":{"$ref":"#/$defs/id"},"requestDigest":{"$ref":"#/$defs/d"},"purpose":{"type":"string","minLength":3,"maxLength":128},"subjectDigest":{"$ref":"#/$defs/d"},"verifiedSigners":{"type":"array","maxItems":16,"items":{"type":"object","additionalProperties":false,"properties":{"role":{"type":"string","minLength":3},"identity":{"type":"string","minLength":3},"keyFingerprint":{"$ref":"#/$defs/d"}},"required":["role","identity","keyFingerprint"]}},"verifierAuthorityRef":{"type":"string","pattern":"^https://"},"verifiedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","receiptId","requestDigest","purpose","subjectDigest","verifiedSigners","verifierAuthorityRef","verifiedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-adoption-prepare-result/v2","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-adoption-prepare-result/v2"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"packageId":{"$ref":"#/$defs/id"},"outcome":{"const":"awaiting_approval"},"requestDigest":{"$ref":"#/$defs/d"},"packageDigest":{"$ref":"#/$defs/d"},"approvalSubjectDigest":{"$ref":"#/$defs/d"},"claimAdoptionRequestDigest":{"$ref":"#/$defs/d"},"foundationPayloadManifestDigest":{"$ref":"#/$defs/d"},"preparedPackageManifestDigest":{"$ref":"#/$defs/d"},"noMutationProofDigest":{"$ref":"#/$defs/d"},"privateStateDigest":{"$ref":"#/$defs/d"},"completedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","packageId","outcome","requestDigest","packageDigest","approvalSubjectDigest","claimAdoptionRequestDigest","foundationPayloadManifestDigest","preparedPackageManifestDigest","noMutationProofDigest","privateStateDigest","completedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}

@@ -1,0 +1,48 @@
+{
+  "$id": "bootstrap-trust-anchor/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Out-of-band bootstrap trust anchor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "recordDigest", "anchorId", "expectedRootId", "expectedRootDigest", "rootSigningKeyFingerprints", "rootThreshold", "recoveryKeyFingerprints", "recoveryThreshold", "trustedComponents", "validFrom", "validUntil", "revocationEndpoint"],
+  "properties": {
+    "schema": {"const": "bootstrap-trust-anchor/v1"},
+    "recordDigest": {"$ref": "#/$defs/digest"},
+    "anchorId": {"$ref": "#/$defs/id"},
+    "expectedRootId": {"$ref": "#/$defs/id"},
+    "expectedRootDigest": {"$ref": "#/$defs/digest"},
+    "rootSigningKeyFingerprints": {"$ref": "#/$defs/fingerprints"},
+    "rootThreshold": {"type": "integer", "minimum": 1, "maximum": 16},
+    "recoveryKeyFingerprints": {"$ref": "#/$defs/fingerprints"},
+    "recoveryThreshold": {"type": "integer", "minimum": 1, "maximum": 16},
+    "trustedComponents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["launcher", "materializer", "legacyBridge"],
+      "properties": {
+        "launcher": {"$ref": "#/$defs/component"},
+        "materializer": {"$ref": "#/$defs/component"},
+        "legacyBridge": {"$ref": "#/$defs/component"}
+      }
+    },
+    "validFrom": {"type": "string", "format": "date-time"},
+    "validUntil": {"type": "string", "format": "date-time"},
+    "revocationEndpoint": {"type": "string", "format": "uri", "pattern": "^https://"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "fingerprints": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}},
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["componentId", "sourceDigest", "packageDigest", "runtimePath"],
+      "properties": {
+        "componentId": {"$ref": "#/$defs/id"},
+        "sourceDigest": {"$ref": "#/$defs/digest"},
+        "packageDigest": {"$ref": "#/$defs/digest"},
+        "runtimePath": {"type": "string", "pattern": "^/"}
+      }
+    }
+  }
+}

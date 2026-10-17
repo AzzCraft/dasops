@@ -1,0 +1,21 @@
+{
+  "$id": "protected-materialization-receipt/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "commit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "destination": {"minLength": 1, "type": "string"},
+    "fileCount": {"minimum": 1, "type": "integer"},
+    "inventoryDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "materializedAt": {"format": "date-time", "type": "string"},
+    "outcome": {"const": "materialized"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "requestDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "schema": {"const": "protected-materialization-receipt/v1"},
+    "totalBytes": {"minimum": 0, "type": "integer"},
+    "tree": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"}
+  },
+  "required": ["schema", "recordDigest", "requestDigest", "outcome", "commit", "tree", "destination", "fileCount", "totalBytes", "inventoryDigest", "materializedAt"],
+  "title": "Protected no-ref materialization receipt v1",
+  "type": "object"
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bootstrap-current-head/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "bootstrap-current-head/v1"},
+    "recordDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "registryId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "sequence": {"type": "string", "pattern": "^[0-9]{20}$"},
+    "headDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "entryDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "attemptId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "state": {"enum": ["registered", "candidate_prepared", "claim_publication_pending", "claimed", "cancelled_pre_cas", "adopted", "compensated", "abandoned", "emergency_recovered"]},
+    "slotDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "headSlotCommitDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "terminalHeadDigests": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+    "updatedAt": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "recordDigest", "registryId", "sequence", "headDigest", "entryDigest", "attemptId", "state", "slotDigest", "headSlotCommitDigest", "terminalHeadDigests", "updatedAt"]
+}

@@ -1,0 +1,103 @@
+{
+  "$id": "protected-task-state/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "canonicalCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "changeId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "claimGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "leaseGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "leaseExpiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "operationId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "pendingCandidateCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "pendingOperationId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "completionRequestDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "owner": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "recordDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-task-state/v1"
+    },
+    "status": {
+      "enum": [
+        "claim_pending",
+        "claimed_pending_activation",
+        "active",
+        "renewal_pending",
+        "release_pending",
+        "reclaim_pending",
+        "completion_pending",
+        "released",
+        "reclaimed",
+        "completed"
+      ],
+      "type": "string"
+    },
+    "taskId": {
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]{1,127}$",
+      "type": "string"
+    },
+    "tokenHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "workerLockPath": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "operationId",
+    "changeId",
+    "taskId",
+    "owner",
+    "status",
+    "tokenHash",
+    "claimGeneration",
+    "leaseGeneration",
+    "canonicalCommit",
+    "updatedAt",
+    "workerLockPath",
+    "leaseExpiresAt"
+  ],
+  "title": "Protected task state v1",
+  "type": "object"
+}

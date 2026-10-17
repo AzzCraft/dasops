@@ -1,0 +1,19 @@
+{
+  "$id": "protected-completion-verification/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidateCommit": {"pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$", "type": "string"},
+    "outcome": {"const": "passed"},
+    "profileId": {"minLength": 1, "type": "string"},
+    "recordDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "reportDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "requestDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"},
+    "schema": {"const": "protected-completion-verification/v1"},
+    "verifiedAt": {"format": "date-time", "type": "string"},
+    "verifierId": {"minLength": 1, "type": "string"}
+  },
+  "required": ["schema", "recordDigest", "requestDigest", "candidateCommit", "profileId", "outcome", "reportDigest", "verifierId", "verifiedAt"],
+  "title": "Protected completion verification v1",
+  "type": "object"
+}

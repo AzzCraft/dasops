@@ -1,0 +1,84 @@
+{
+  "$id": "protected-route-request/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "changeId": {
+      "type": "string"
+    },
+    "recordDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-route-request/v1"
+    },
+    "sourceResults": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "resultDigest": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "resultDigest"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "targetTransitions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "fromStatus": {
+            "const": "BLOCKED"
+          },
+          "owner": {
+            "const": "-"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "toStatus": {
+            "const": "TODO"
+          }
+        },
+        "required": [
+          "taskId",
+          "fromStatus",
+          "toStatus",
+          "owner"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "requestId",
+    "changeId",
+    "baseCommit",
+    "sourceResults",
+    "targetTransitions"
+  ],
+  "title": "Protected route request v1",
+  "type": "object"
+}

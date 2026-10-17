@@ -1,0 +1,84 @@
+{
+  "$id": "protected-activation-receipt/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "activationKind": {
+      "enum": [
+        "claim_activation",
+        "renewal_activation"
+      ],
+      "type": "string"
+    },
+    "canonicalCommit": {
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "type": "string"
+    },
+    "challengeDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "claimGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "leaseGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "operationId": {
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "matched",
+        "mismatch",
+        "expired"
+      ],
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "recordDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema": {
+      "const": "protected-activation-receipt/v1"
+    },
+    "responseDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "tokenHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "recordDigest",
+    "operationId",
+    "taskId",
+    "outcome",
+    "tokenHash",
+    "claimGeneration",
+    "leaseGeneration",
+    "canonicalCommit",
+    "challengeDigest",
+    "activatedAt",
+    "owner",
+    "responseDigest",
+    "activationKind"
+  ],
+  "title": "Protected activation receipt v1",
+  "type": "object"
+}

@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"bootstrap-candidate-preparation-request/v1","type":"object","additionalProperties":false,
+  "properties":{"schema":{"const":"bootstrap-candidate-preparation-request/v1"},"recordDigest":{"$ref":"#/$defs/d"},"operationId":{"$ref":"#/$defs/id"},"attemptId":{"$ref":"#/$defs/id"},"headDigest":{"$ref":"#/$defs/d"},"rootDigest":{"$ref":"#/$defs/d"},"changeId":{"type":"string","minLength":1,"maxLength":128},"taskId":{"type":"string","minLength":1,"maxLength":128},"worker":{"type":"string","minLength":1,"maxLength":128},"baseCommit":{"$ref":"#/$defs/o"},"workerLockPath":{"type":"string","pattern":"^/"},"temporaryPathManifestDigest":{"$ref":"#/$defs/d"},"idempotencyKeyDigest":{"$ref":"#/$defs/d"},"legacyTokenProfileDigest":{"$ref":"#/$defs/d"},"requestedAt":{"type":"string","format":"date-time"}},
+  "required":["schema","recordDigest","operationId","attemptId","headDigest","rootDigest","changeId","taskId","worker","baseCommit","workerLockPath","temporaryPathManifestDigest","idempotencyKeyDigest","legacyTokenProfileDigest","requestedAt"],
+  "$defs":{"d":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"o":{"type":"string","pattern":"^[0-9a-f]{40}$"},"id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}}
+}
