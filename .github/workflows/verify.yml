@@ -19,6 +19,16 @@ jobs:
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
         with:
           python-version: "3.11"
+      - name: Prepare Linux sandbox tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap
+          # Sealed-memfd execution cannot use a pathname-based AppArmor exception.
+          # This setting applies only to this disposable test runner.
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-all --ro-bind / / -- /bin/true
       - name: Install
         run: |
           python -m pip install --disable-pip-version-check -r requirements-verify.txt

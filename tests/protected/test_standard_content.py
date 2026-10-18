@@ -146,9 +146,10 @@ def test_canonical_template_all_required_fields_can_be_filled_without_expanding_
 @pytest.mark.parametrize('kind', ['master_doc','ui_spec'])
 def test_real_canonical_authors_accept_explicit_draft_project_fields(kind):
     from dasops.adopt import render_full_template
-    standard=Path(__file__).resolve().parents[3]/'das-standard'
+    standard=Path(__file__).resolve().parents[1]/'fixtures/canonical-standard-templates'
     author=next(row for row in json.loads((standard/'template_catalog.json').read_bytes())['templates'] if row['docType']==kind)
     raw=(standard/author['artifactPath']).read_bytes()
+    assert hashlib.sha256(raw).hexdigest()==author['sha256']
     values={'DOC_ID':'PROJECT-7','OWNER':'actual-owner','STATUS':'draft'}
     values['USER_OUTCOME' if kind=='master_doc' else 'WHAT_USER_IS_DOING_HERE']='Approved local outcome.\nSecond line stays.'
     actual=render_full_template(author,raw,values)
