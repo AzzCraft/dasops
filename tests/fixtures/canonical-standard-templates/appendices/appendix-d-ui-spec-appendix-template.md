@@ -44,7 +44,7 @@ Non-goals:
 
 - **MUST:** Use stable **Screen IDs**: `UI-001`, `UI-002`, …
 - **MUST:** If the app has routing, each screen MUST map to a stable **Route ID** (recommended to store in `contracts`).
-- **MUST:** Critical interactive elements MUST have stable test selectors (e.g., `data-testid`) for E2E tests.  
+- **MUST:** Critical interactive elements MUST have stable test selectors (e.g., `data-testid`) for E2E tests.
   Treat these selectors as **identifier contracts**: do not change without updating tests + this appendix.
 - **SHOULD:** Telemetry event names and properties SHOULD be treated as contracts (stable naming; versioned when breaking).
 
@@ -53,7 +53,7 @@ Non-goals:
 When behavior is hard to describe in words:
 
 - **MUST:** Link the interactive prototype (`{{FIGMA_OR_PROTOTYPE_URL}}`) **and** embed enough exported images to disambiguate behavior.
-- **SHOULD:** Prefer **annotated PNGs** for key states.  
+- **SHOULD:** Prefer **annotated PNGs** for key states.
 - **MAY:** Include a short **GIF/MP4** (5–20s) for interactions/animations that require motion to understand.
 - **MUST:** All embedded visuals MUST use **scrubbed / synthetic data**. No production PII.
 - **MUST:** Every embedded image/video MUST include:
@@ -113,10 +113,10 @@ flowchart TD
 
 ##### UI-001 — `{{SCREEN_NAME}}`
 
-**Purpose / user value**  
+**Purpose / user value**
 `{{WHAT_USER_IS_DOING_HERE}}`
 
-**AI interaction mode**  
+**AI interaction mode**
 `{{static|streaming|async_job|optimistic}}`
 - Streaming contract (if applicable): `STREAM-###`
 - Citation contract (if applicable): `CIT-###` / `AnnotatedContent`
@@ -217,9 +217,9 @@ flowchart TD
 
 #### 7. Test plan mapping (required for critical flows)
 
-- **E2E smoke scenarios** (Playwright/Cypress/etc.):  
-  - `smoke-ui-01`: covers `W1` (`UI-001 → UI-002`)  
-- **Visual regression**: `{{YES/NO}}` (tool + baseline location)  
+- **E2E smoke scenarios** (Playwright/Cypress/etc.):
+  - `smoke-ui-01`: covers `W1` (`UI-001 → UI-002`)
+- **Visual regression**: `{{YES/NO}}` (tool + baseline location)
 - **Contract fixtures referenced**: `{{FIXTURE_IDS}}`
 
 On failure, tests SHOULD capture:

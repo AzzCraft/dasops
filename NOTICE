@@ -2,3 +2,11 @@ dasops
 Copyright (c) 2026 AzzCraft Inc. (重庆艾之舟科技有限公司)
 
 This repository is the DAS factory and product-repo adoption toolchain.
+
+The Master Doc and UI Spec test samples under
+tests/fixtures/canonical-standard-templates/appendices/ are derived from DAS
+Standard 1.5.0-beta.1, copyright (c) 2026 AzzCraft Inc., and retain CC-BY-4.0:
+https://creativecommons.org/licenses/by/4.0/
+Their catalog records the public source commit and original/sample hashes.
+Only trailing horizontal whitespace was removed. These samples are an exception
+to the repository's Apache-2.0 code license and are not runtime template authors.
