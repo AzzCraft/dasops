@@ -11,6 +11,37 @@ from dasops.vendor import SUPPORTED_PUBLIC_TIERS, build_install_cadence_command
 from tests.test_template_verify_frontend import copy_template_repo, seed_frontend_evidence
 
 
+def test_generated_verifier_releases_state_guard_before_cadence(tmp_path):
+    from dasops.locks import claim_task, complete_task, read_lock
+
+    repo = copy_template_repo(str(tmp_path))
+    change = repo / "openspec/changes/heartbeat"
+    change.mkdir()
+    (change / "tasks.md").write_text(
+        "| Task ID | Title | Owner | Status | Depends on | Verify gate |\n"
+        "|---|---|---|---|---|---|\n"
+        "| T-001 | Review | - | TODO | - | `./scripts/verify` |\n"
+        "| T-002 | Independent | - | TODO | - | `./scripts/verify` |\n")
+    path = claim_task(repo_root=repo, change_id="heartbeat", task_id="T-001", owner="worker-a")
+    token = read_lock(path).lock_token
+    (repo / "vendor/cadence").mkdir()
+    # This controlled child substitutes the external Cadence command only.
+    # Probe nonblocking first so a regression cannot hang the test for 900s.
+    (repo / "cadencew").write_text(
+        f"#!{sys.executable}\n"
+        "import fcntl, sys\nfrom pathlib import Path\n"
+        "root = Path.cwd()\n"
+        "with (root / 'openspec/changes/heartbeat/.dasops-local/coordination.guard').open('r+b') as guard:\n"
+        "    fcntl.flock(guard.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+        f"sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n"
+        "from dasops.locks import renew_lock, claim_task\n"
+        f"renew_lock(repo_root=root, change_id='heartbeat', task_id='T-001', owner='worker-a', lock_token={token!r})\n"
+        "claim_task(repo_root=root, change_id='heartbeat', task_id='T-002', owner='worker-b')\n")
+    complete_task(repo_root=repo, change_id="heartbeat", task_id="T-001", owner="worker-a")
+    assert read_lock(path).status == "DONE"
+    assert read_lock(change / "task_locks/T-002.lock").owner == "worker-b"
+
+
 @pytest.mark.parametrize("defect", ["owner-drift", "missing-lock", "misbound-id", "duplicate-task", "duplicate-key", "boolean-lease", "missing-index"])
 def test_template_verifier_rejects_inconsistent_task_snapshot(tmp_path, defect):
     from dasops.locks import claim_task, complete_task

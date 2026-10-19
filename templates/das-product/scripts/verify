@@ -395,10 +395,6 @@ def _checks(frontend: bool) -> int:
         rc |= child.returncode
     else:
         ok("frontend evidence not applicable (legacy ui.enabled=false)")
-    if rc == 0:
-        rc |= maybe_run_cadence()
-    if rc == 0:
-        print("\nAll verify checks passed.")
     return rc
 
 
@@ -420,7 +416,14 @@ def main() -> int:
             fcntl.flock(stream.fileno(), fcntl.LOCK_SH)
             if os.path.lexists(meta / "pending.json"):
                 return fail("task state recovery_required; resume a DASOps writer before verification")
-        return _checks(args.frontend)
+        rc = _checks(args.frontend)
+    # Only snapshot reads need the shared guard. External verification must
+    # allow heartbeats/writers; complete-task rechecks its subject before DONE.
+    if rc == 0:
+        rc = maybe_run_cadence()
+    if rc == 0:
+        print("\nAll verify checks passed.")
+    return rc
 
 
 if __name__ == "__main__":
