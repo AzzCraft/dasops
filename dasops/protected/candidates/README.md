@@ -141,16 +141,13 @@ no analysis-complete eligibility. Fresh C, grant, Evidence and Decision bind the
 new cycle; old Decisions reject. Historical exact reads retain old bytes and
 confer no current qualification. No table/schema-version migration is introduced.
 
-The original source driver is
-`tests/das_v1_5/test_a01_complete_chain.py::test_a01_2`. It invokes 26 actual
-cross-component variants in `tests/integration/test_analysis_completion_exchange.py`,
-including Unix/CLI, lost response, revocation, missing originals, wrong scope,
-pending actions, final INSERT failure and approved/unapproved rework. These TEST
-fixtures do not establish a production signing service, independent deployment
-or final installed acceptance. Integration v1 identities and wire bytes remain
+Published local source checks are in `tests/protected/test_completion.py`,
+`tests/protected/test_candidate_store.py` and `tests/protected/test_version_trees.py`.
+These do not establish independent installed cross-component qualification or a
+production signing service. Integration v1 identities and wire bytes remain
 separate and unchanged.
 
-This implements part of T-007/P08. `CandidateStore` receives fixed bytes;
+`CandidateStore` receives fixed bytes;
 `VersionTreeManager` prepares plans and switches a SQL reference to complete
 trees. Neither library is an authenticated service, release acceptance runner,
 integration qualifier, signer or installed beta deployment. Every mechanism
@@ -488,18 +485,16 @@ still require deployment qualification; TEST time records do not supply it.
     preparation, Worker UID/caps, namespaces/cgroup and whole-domain termination.
     Integrating this library into a formal govern service and final builder still
     requires authenticated topology, approved read scope and package identity.
-32. Root `tests/integration/test_candidate_runtime_exchange.py` selects the actual
-    pinned native configuration explicitly. It executes committed `run.py`, reads
-    a pinned external material with UID 65532, checks genuine readonly-input write
-    rejection and independently rereads the original candidate after termination.
-    These two source/runtime exchanges grant neither authority nor qualification.
+32. The public source tests demonstrate their local library mechanisms only.
+    Actual installed runtime/identity and whole-domain termination need separate
+    evidence; a parent-workspace test path is not an executable public reference.
 
 The staging SQL author has changed. An older unpublished staging DB fails its
 author-digest check; there is no silent upgrade and no change to released protected
 v1 data. Migration, authenticated govern deployment, final owner/mount/handle proofs,
 OS importer/builder integration, approved material completeness, durable volume
 fault evidence, actual C→I qualification, installed package acceptance and
-publication remain required before closing T-007 or beta.1.
+publication remain separate conditions before claiming complete beta.1 qualification.
 
 Run focused source checks from the dasops component:
 

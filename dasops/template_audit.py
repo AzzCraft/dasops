@@ -79,6 +79,7 @@ REQUIRED_TEMPLATE_FILES = [
     "scripts/verify",
     "scripts/verify-backend",
     "scripts/verify-frontend",
+    "scripts/verify_frontend_evidence.py",
     "scripts/verify-contracts",
     "scripts/run_worker_codex.sh",
     "docs/USER_MANUAL.md",
@@ -94,7 +95,7 @@ REQUIRED_TEMPLATE_FILES = [
 
 FAIL_CLOSED_SCRIPTS = {
     "scripts/verify-backend": "fail-closed",
-    "scripts/verify-frontend": "fail-closed",
+    "scripts/verify-frontend": "exec bash",
     "scripts/verify-contracts": "fail-closed",
 }
 
@@ -172,9 +173,9 @@ COMMAND_PARITY_RULES = {
     "templateReadmeVisualRegression": ("templates/das-product/README.md", "visual regression"),
     "templateUserManualBaselineRatchet": ("templates/das-product/docs/USER_MANUAL.md", "baseline ratchet"),
     "templateUserManualVisualMatrix": ("templates/das-product/docs/USER_MANUAL.md", "visualMatrix"),
-    "guiVisualRegressionHint": ("gui/app.py", "baseline ratchet"),
-    "guiVisualMatrixHint": ("gui/app.py", "visualMatrix"),
-    "guiCadenceCloneWarning": ("gui/app.py", "real Git base or an explicit org"),
+    "guiVisualRegressionHint": ("gui/app.py", "matrix structure"),
+    "guiVisualMatrixHint": ("gui/app.py", "evidence-file presence"),
+    "guiCadenceCloneWarning": ("gui/app.py", "build_install_cadence_command"),
     "guiCadenceRuntimeExecWarning": ("gui/app.py", "Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."),
     "templateVendorReadmeCadenceClone": ("templates/das-product/vendor/README.md", "./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>"),
     "templateVendorReadmeCadenceCloneFailClosed": ("templates/das-product/vendor/README.md", "Clone mode is fail-closed"),
@@ -226,11 +227,11 @@ FRONTEND_EVIDENCE_ARTIFACTS = [
     "artifacts/frontend/screenshots/",
 ]
 FRONTEND_EVIDENCE_CONTRACT_RULES = {
-    "templates/das-product/scripts/verify-frontend": FRONTEND_EVIDENCE_ARTIFACTS,
+    "templates/das-product/scripts/verify_frontend_evidence.py": FRONTEND_EVIDENCE_ARTIFACTS,
     "templates/das-product/openspec/schemas/das-standard/templates/verification_plan.md": FRONTEND_EVIDENCE_ARTIFACTS,
 }
 FRONTEND_EVIDENCE_RUNTIME_MARKERS = {
-    "templates/das-product/scripts/verify-frontend": [
+    "templates/das-product/scripts/verify_frontend_evidence.py": [
         "json.loads",
         "VISUAL_MATRIX_KEYS",
         "load_visual_matrix_schema",

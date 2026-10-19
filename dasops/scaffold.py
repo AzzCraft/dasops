@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .locks import claim_ready_task, claim_task, complete_task, read_lock, release_task, lock_path_for
+from .locks import claim_ready_task, claim_task, complete_task, read_lock, release_task, lock_path_for, _read_lock_file, _snapshot
+from .legacy_task_state import guard
 from .repo_factory import create_product_repo, init_repo, new_change
 from .tasks import DRAFT_MARKER, DRAFT_MARKER_LINE, list_tasks as _list_tasks, print_status, read_task_hints
 
 
 def list_tasks(*, repo_root: Path, change_id: str):
-    return _list_tasks(
-        repo_root=repo_root,
-        change_id=change_id,
-        lock_reader=read_lock,
-        lock_path_for=lock_path_for,
-    )
+    change = repo_root / "openspec" / "changes" / change_id
+    with guard(change):
+        _snapshot(change)
+        return _list_tasks(repo_root=repo_root, change_id=change_id,
+                           lock_reader=_read_lock_file, lock_path_for=lock_path_for)
 
 
 __all__ = [

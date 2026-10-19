@@ -22,8 +22,8 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 - **Verification gates**
   - `./scripts/verify` (minimum checks; expand per repo)
   - `./scripts/verify-backend`, `./scripts/verify-contracts` (fail-closed gates until repo-specific evidence exists)
-  - `./scripts/verify-frontend` (real fail-closed visual regression gate requiring `artifacts/frontend/visualMatrix.json` to match `openspec/schemas/das-standard/visual_matrix.schema.json`, plus `artifacts/frontend/baseline/` and `artifacts/frontend/screenshots/`)
-  - Frontend repos should treat `./scripts/verify-frontend` as the visual regression and baseline ratchet gate.
+  - `./scripts/verify-frontend` (fail-closed matrix/file-presence check requiring `artifacts/frontend/visualMatrix.json` to match `openspec/schemas/das-standard/visual_matrix.schema.json`, plus `artifacts/frontend/baseline/` and `artifacts/frontend/screenshots/`)
+  - Frontend products need actual visual regression and baseline ratchet tests; this helper checks only matrix structure and non-empty directories. Main verify selects it via boolean `ui.enabled` or explicit `--frontend`.
 
 - **Agent governance**
   - `docs/policies/AGENT_OPERATING_MODEL.md`

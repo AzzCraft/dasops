@@ -1,15 +1,24 @@
-# Data Boundary and Redaction Policy
+# Data Boundary and Export Review
 
-DAS separates customer data, operational metadata, evidence, logs, and support material into explicit trust zones. The default rule is local processing: source code, evidence bundles, logs, and diagnostic bundles stay inside the customer-controlled workspace unless an operator exports them.
+DASOps works on the product directory selected by its caller. Scaffolding copies
+the supplied Master Doc/UI Spec, templates and change artifacts into that directory.
+Local task commands read/write Markdown and YAML. Protected references use their
+installed authority and evidence-store boundaries; see
+[`protected/candidates/README.md`](../../dasops/protected/candidates/README.md).
 
-## Boundary Classes
+No general export redaction or support-upload service is provided here. CLI output,
+exceptions, repository files and evidence may contain source snippets, paths,
+identifiers or credentials supplied by the operator. Do not export them by default.
+Before sharing, select the minimum files, review their contents, and prepare a
+separate sanitized copy. Preserve original signed bytes under their original
+access controls: changing a display copy does not preserve its signature identity.
 
-| Class | Examples | Export rule | Required redaction |
-| --- | --- | --- | --- |
-| customer-source | repository files, generated patches, policy inputs | never exported by default | path, email, token, private key, license value |
-| metadata | repo IDs, task IDs, run IDs, timestamps | export allowed for support | tenant ID and user identifiers |
-| evidence | EvidenceBundle, replay logs, audit export | export allowed only by operator action | source snippets, filesystem paths, secrets |
-| logs | CLI logs, control-plane logs, plugin logs | support bundle only | tokens, emails, home paths, credential fields |
-| support | diagnostics, health reports, license state | explicit support packet | license value, private config, API credentials |
+| Material | Handling |
+|---|---|
+| Source and task inputs | Treat as product data; share only with explicit permission |
+| Evidence, logs and configuration | Review source snippets, home paths, tokens, URLs and identities |
+| Credentials and signed private inputs | Keep out of public source and support packets; rotate on exposure |
+| Public synthetic fixtures | Retain their test purpose; they confer no operational authority |
 
-`tools/security/check_redaction.py` validates that exported JSON does not contain the secret-like patterns enforced by `shared/logging/redaction.py`.
+File hashes detect changed bytes; they do not detect or remove sensitive content.
+Installed applications remain responsible for their real storage/network permissions.

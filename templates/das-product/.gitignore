@@ -23,3 +23,6 @@ output/
 # Codex
 .codex/log/
 .codex/session-*.jsonl
+
+# Local cooperative task mutex and recovery journal (never versioned).
+**/.dasops-local/

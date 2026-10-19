@@ -172,6 +172,14 @@ Clone mode is fail-closed: pass `--git-base`, `--org`, or set
 
 Run Cadence on this repo
 
+The default Factory seed retains its legacy 1.4 configuration. Before invoking
+the native CLI, supply valid `closureRef`, `toolingLock`, `runtimeRef`, `registryRef`
+and `sandboxRef` inputs following the installed Cadence version's contract.
+Installing a binary or copying the vendor folder does not create these inputs
+or approve 1.5 adoption; the native gate refuses an unconfigured project.
+For a ready synthetic example, use Cadence's public
+`cadence-examples/examples/headless-minimal` separately.
+
 ```
 ./cadencew verify --profile dev
 ```
@@ -196,14 +204,14 @@ scripts/verify-backend
 scripts/verify-frontend
 ```
 
-`scripts/verify-frontend` is the visual regression gate. Treat it as a
-baseline ratchet: no visual regression is silently introduced, and any
-matrix-based frontend verifier should keep its `visualMatrix` dimensions
-documented alongside the generated evidence and governed by
-`openspec/schemas/das-standard/visual_matrix.schema.json`. The standard
-template verifier expects:
+Product UI tests should implement a visual regression baseline ratchet.
+The shipped `scripts/verify-frontend` checks only `visualMatrix` structure and
+file presence, not visual comparisons, review or approval. Main verify selects
+it through boolean legacy `ui.enabled`; an explicit call forces it once.
+The matrix schema is `openspec/schemas/das-standard/visual_matrix.schema.json`.
+The template presence check expects:
 
 - `artifacts/frontend/visualMatrix.json` to match the governed `viewports`,
   `themes`, and `locales` array contract
 - `artifacts/frontend/baseline/` to exist and contain baseline artifacts
-- `artifacts/frontend/screenshots/` to exist and contain reviewed captures
+- `artifacts/frontend/screenshots/` to exist and contain caller-supplied files

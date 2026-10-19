@@ -1,0 +1,90 @@
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import yaml
+from dasops.vendor import SUPPORTED_PUBLIC_TIERS, build_install_cadence_command
+from tests.test_template_verify_frontend import copy_template_repo, seed_frontend_evidence
+
+
+@pytest.mark.parametrize("enabled", [False, True, "true"])
+def test_main_frontend_selection_is_explicit_and_helper_runs_once(tmp_path, enabled):
+    repo = copy_template_repo(str(tmp_path))
+    config = yaml.safe_load((repo / "cadence.yaml").read_text())
+    config["ui"]["enabled"] = enabled
+    (repo / "cadence.yaml").write_text(yaml.safe_dump(config))
+    run = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    if enabled is False:
+        assert run.returncode == 0, run.stderr
+        assert "frontend evidence not applicable" in run.stdout
+    else:
+        assert run.returncode != 0
+        assert ("ui.enabled must be boolean" if isinstance(enabled, str) else "missing frontend evidence file") in run.stdout + run.stderr
+    if enabled is True:
+        seed_frontend_evidence(repo, visual_matrix_text='{"viewports":["desktop"],"themes":["light"],"locales":["en"]}')
+        run = subprocess.run(["bash", "scripts/verify-frontend"], cwd=repo, text=True, capture_output=True)
+        assert run.returncode == 0, run.stderr
+        assert run.stdout.count("matrix structure and file presence only") == 1
+    (repo / "openspec/changes/broken/.dasops-local").mkdir(parents=True)
+    (repo / "openspec/changes/broken/tasks.md").write_text("fixture")
+    (repo / "openspec/changes/broken/.dasops-local/pending.json").write_text("{}")
+    run = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    assert run.returncode != 0 and "recovery_required" in run.stdout + run.stderr
+
+
+def test_vendor_public_tiers_and_source_validation(tmp_path):
+    for tier in ["pro", "enterprise", "unknown"]:
+        with pytest.raises(ValueError, match="only tier=oss"):
+            build_install_cadence_command(tier=tier, git_base="https://github.com/AzzCraft")
+    with pytest.raises(ValueError):
+        build_install_cadence_command(tier="oss")
+    with pytest.raises(ValueError):
+        build_install_cadence_command(tier="oss", from_suite=str(tmp_path / "missing"))
+    assert SUPPORTED_PUBLIC_TIERS == ("oss",)
+    command = build_install_cadence_command(tier="oss", git_base="https://github.com/AzzCraft")
+    assert command[-2:] == ["--git-base", "https://github.com/AzzCraft"]
+    script = Path(__file__).resolve().parents[1] / "templates/das-product/scripts/install_cadence_vendor.sh"
+    run = subprocess.run(["bash", str(script), "--tier", "pro"], capture_output=True, text=True)
+    assert run.returncode == 2 and "Invalid --tier" in run.stderr
+
+
+@pytest.mark.parametrize("valid_source", [False, True])
+def test_gui_preflights_source_and_retains_created_product_on_install_failure(tmp_path, monkeypatch, valid_source):
+    product = tmp_path / "product"
+    errors, created = [], []
+    class UI:
+        def text_input(self, label, value="", **kwargs):
+            if label == "Product repo output directory": return str(product)
+            if label == "Git base": return "https://github.com/AzzCraft" if valid_source else ""
+            return value
+        def checkbox(self, label, value=False, **kwargs):
+            return True if label == "Install Cadence under vendor/cadence" else value
+        def file_uploader(self, *args, **kwargs): return SimpleNamespace(getvalue=lambda: b"# Synthetic input\n")
+        def selectbox(self, label, options, **kwargs):
+            assert options == ["oss"]
+            return options[0]
+        def radio(self, *args, **kwargs): return "Clone from Git base"
+        def button(self, *args, **kwargs): return True
+        def error(self, text): errors.append(text)
+        def __getattr__(self, name): return lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "streamlit", UI())
+    path = Path(__file__).resolve().parents[1] / "gui/app.py"
+    spec = importlib.util.spec_from_file_location("review_gui", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    def create(**kwargs):
+        product.mkdir()
+        created.append(product)
+        return product
+    monkeypatch.setattr(module, "create_product_repo", create)
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=2, stdout="synthetic installer failure"))
+    module.main()
+    if valid_source:
+        assert product.is_dir() and created == [product]
+        assert any("was created" in error and "installation failed" in error for error in errors)
+    else:
+        assert not product.exists() and not created and errors

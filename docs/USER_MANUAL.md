@@ -307,8 +307,6 @@ Clone mode is fail-closed: pass `--git-base`, `--org`, or set
 Step 2. Verify Cadence itself
 
 ```
-cd vendor/cadence/cadence-oss
-bash ./scripts/verify
 bash vendor/cadence/cadence-oss/scripts/verify
 ```
 
@@ -317,6 +315,13 @@ Step 3. Run Cadence on the product repo
 Go is required if the cadence binary is not installed globally.
 
 From the product repo root:
+
+First provide the native CLI's required `closureRef`, `toolingLock`, `runtimeRef`,
+`registryRef` and `sandboxRef` and their valid referenced artifacts. The default
+1.4 Factory seed has only the legacy configuration: copying the binary/vendor
+directory does not configure native execution or approve 1.5 adoption. Without
+those inputs the native gate refuses the project. For a ready synthetic native
+example, use the separate headless flow in [OSS quickstart](quickstart/OSS_15_MIN.md).
 
 ```
 ./cadencew verify --profile dev
@@ -362,11 +367,12 @@ scripts/verify-backend
 scripts/verify-frontend
 ```
 
-For frontend repos, `scripts/verify-frontend` is the visual regression gate.
-It should behave like a baseline ratchet: no visual regression is silently
-introduced, and any `visualMatrix` dimensions used by the frontend verifier
-should stay aligned with the repo's checked-in evidence, docs, and governed
-contract at `templates/das-product/openspec/schemas/das-standard/visual_matrix.schema.json`.
+For frontend repos, product UI tests should implement a visual regression
+baseline ratchet. The shipped `scripts/verify-frontend` checks only `visualMatrix`
+structure and non-empty evidence directories, not comparisons, review or approval.
+Main verify selects it through boolean legacy `ui.enabled`; an explicit call forces
+it once. The governed matrix schema is at
+`templates/das-product/openspec/schemas/das-standard/visual_matrix.schema.json`.
 The standard template runtime expects `artifacts/frontend/visualMatrix.json`
 to match that schema,
 `artifacts/frontend/baseline/`, and `artifacts/frontend/screenshots/`.

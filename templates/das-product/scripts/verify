@@ -8,6 +8,13 @@ python3 - "$@" <<'PY'
 from __future__ import annotations
 
 import json
+import argparse
+import sys
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+from contextlib import ExitStack
 import os
 import re
 import subprocess
@@ -315,7 +322,7 @@ def maybe_run_cadence() -> int:
     return 0
 
 
-def main() -> int:
+def _checks(frontend: bool) -> int:
     rc = 0
     rc |= check_exists()
     if rc != 0:
@@ -328,11 +335,43 @@ def main() -> int:
     rc |= check_tooling_lock_schema()
     rc |= check_extension_manifest_schema()
     rc |= check_master_doc_minimum()
+    config = yaml.safe_load((REPO_ROOT / "cadence.yaml").read_text())
+    if not isinstance(config, dict) or not isinstance(config.get("ui", {}), dict):
+        return fail("cadence.yaml ui must be an object")
+    enabled = config.get("ui", {}).get("enabled", False)
+    if type(enabled) is not bool:
+        return fail("cadence.yaml ui.enabled must be boolean")
+    if frontend or enabled:
+        child = subprocess.run([sys.executable, str(REPO_ROOT / "scripts/verify_frontend_evidence.py")], cwd=REPO_ROOT)
+        rc |= child.returncode
+    else:
+        ok("frontend evidence not applicable (legacy ui.enabled=false)")
     if rc == 0:
         rc |= maybe_run_cadence()
     if rc == 0:
         print("\nAll verify checks passed.")
     return rc
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--frontend", action="store_true")
+    args = parser.parse_args()
+    # Same stable guard inode as DASOps writers; no read-side recovery.
+    with ExitStack() as stack:
+        for tasks in sorted((REPO_ROOT / "openspec/changes").glob("*/tasks.md")):
+            if fcntl is None:
+                return fail("unsupported task coordination platform")
+            meta = tasks.parent / ".dasops-local"
+            if meta.is_symlink():
+                return fail("invalid task coordination directory")
+            meta.mkdir(mode=0o700, exist_ok=True)
+            fd = os.open(meta / "coordination.guard", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            stream = stack.enter_context(os.fdopen(fd, "r+b"))
+            fcntl.flock(stream.fileno(), fcntl.LOCK_SH)
+            if os.path.lexists(meta / "pending.json"):
+                return fail("task state recovery_required; resume a DASOps writer before verification")
+        return _checks(args.frontend)
 
 
 if __name__ == "__main__":

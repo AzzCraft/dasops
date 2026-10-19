@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+SUPPORTED_PUBLIC_TIERS = ("oss",)
+
 
 def build_install_cadence_command(
     *,
@@ -14,6 +16,16 @@ def build_install_cadence_command(
     use_ssh: bool = False,
     force: bool = False,
 ) -> list[str]:
+    if tier not in SUPPORTED_PUBLIC_TIERS:
+        raise ValueError("Public Cadence installation supports only tier=oss")
+    if from_suite and (git_base or org or use_ssh):
+        raise ValueError("Choose a local Suite source or a remote source")
+    if from_suite:
+        suite = Path(from_suite).expanduser().resolve()
+        if not suite.is_dir() or not (suite.parent / "cadence-oss").is_dir():
+            raise ValueError("Local source requires das-suite with sibling cadence-oss")
+    elif not (git_base and git_base.strip()) and not (org and org.strip()):
+        raise ValueError("Provide --from-suite, --git-base or --org explicitly")
     cmd = ["bash", "./scripts/install_cadence_vendor.sh", "--tier", tier]
     if from_suite:
         cmd.extend(["--from-suite", from_suite])

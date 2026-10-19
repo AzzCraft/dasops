@@ -1,10 +1,13 @@
-# Support Packages
+# Public Support
 
-| Package | Response target | Included support | SKU alignment |
-| --- | --- | --- | --- |
-| standard | two business days | documentation guidance, OSS quickstart help, evidence replay triage | team |
-| premium | one business day | CI integration, entitlement diagnosis, support bundle review | pro |
-| enterprise | four business hours | private deployment, audit export, backup and restore, upgrade rehearsal | enterprise |
-| government | agreed mission window | offline install, data boundary review, supplier acceptance, security incident coordination | gov |
+Use [GitHub issues](https://github.com/AzzCraft/dasops/issues) for public,
+non-sensitive bug reports: version, supported platform, minimal synthetic input,
+command, expected result and actual exit/output. Do not post credentials, private
+source, raw protected evidence or personal paths. Follow
+[`DATA_BOUNDARY.md`](../security/DATA_BOUNDARY.md) before attaching files.
 
-Every support interaction uses the redacted support bundle contract. Sensitive license values, credentials, home paths, emails, and private keys are removed before export while evidence references are preserved.
+This public source distribution defines no service SKU, guaranteed response time,
+private deployment service or support-upload/redaction service. Paid support, if
+separately agreed, is governed by that provider's actual written terms. No such
+agreement is established by this repository. Maintainers must supply an applicable
+public terms reference before adding commercial response promises here.
