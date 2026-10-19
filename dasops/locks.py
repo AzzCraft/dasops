@@ -183,6 +183,7 @@ def inspect_lock(*, repo_root: Path, change_id: str, task_id: str, expect_owner:
     payload = {"changeId": change_id, "taskId": task_id, "path": str(path), "exists": os.path.lexists(path), "valid": False, "ownerMatches": False, "lock": None}
     try:
         with state.guard(change):
+            payload["exists"] = os.path.lexists(path)
             _, _, locks = _snapshot(change)
             lock = locks.get(task_id)
             payload["valid"] = True

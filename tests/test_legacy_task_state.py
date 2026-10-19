@@ -13,6 +13,39 @@ from dasops.locks import (claim_task, claim_ready_task, complete_task, inspect_l
 from dasops.scaffold import list_tasks
 
 
+@pytest.mark.parametrize("transition", ["claim", "release"])
+def test_inspect_existence_matches_snapshot_after_waiting_for_writer(tmp_path, monkeypatch, transition):
+    from contextlib import contextmanager
+    from dasops import __main__ as cli
+
+    project(tmp_path)
+    if transition == "release":
+        claim(tmp_path)
+    original_guard = state.guard
+    changed = False
+
+    @contextmanager
+    def writer_before_reader(change, *, write=False):
+        nonlocal changed
+        if not write and not changed:
+            changed = True
+            if transition == "claim":
+                claim(tmp_path)
+            else:
+                release_task(repo_root=tmp_path, change_id="sample", task_id="T-167", owner="worker-a")
+        with original_guard(change, write=write):
+            yield
+
+    monkeypatch.setattr(state, "guard", writer_before_reader)
+    # Force the writer between the caller's initial stat and guarded snapshot.
+    # The public CLI uses this same inspector; no scheduling sleeps are needed.
+    result = cli.inspect_lock(repo_root=tmp_path, change_id="sample", task_id="T-167", expect_owner="worker-a")
+    assert changed and result["valid"] is True
+    assert result["exists"] is (transition == "claim")
+    assert (result["lock"] is not None) is result["exists"]
+    assert result["ownerMatches"] is result["exists"]
+
+
 def test_worker_hints_refuse_pending_and_inconsistent_state(tmp_path):
     from dasops.scaffold import read_task_hints
     change = project(tmp_path)
