@@ -11,6 +11,40 @@ from dasops.vendor import SUPPORTED_PUBLIC_TIERS, build_install_cadence_command
 from tests.test_template_verify_frontend import copy_template_repo, seed_frontend_evidence
 
 
+@pytest.mark.parametrize("defect", ["owner-drift", "missing-lock", "misbound-id", "duplicate-task", "duplicate-key", "boolean-lease", "missing-index"])
+def test_template_verifier_rejects_inconsistent_task_snapshot(tmp_path, defect):
+    from dasops.locks import claim_task, complete_task
+
+    repo = copy_template_repo(str(tmp_path))
+    change = repo / "openspec/changes/recheck"
+    change.mkdir()
+    tasks = change / "tasks.md"
+    tasks.write_text("| Task ID | Title | Owner | Status | Depends on | Verify gate |\n"
+                     "|---|---|---|---|---|---|\n"
+                     "| T-001 | Review | - | TODO | - | `./scripts/verify` |\n")
+    lock = claim_task(repo_root=repo, change_id="recheck", task_id="T-001", owner="worker-a")
+    task_bytes, lock_bytes = tasks.read_bytes(), lock.read_bytes()
+    if defect == "owner-drift": tasks.write_bytes(task_bytes.replace(b"worker-a", b"worker-b"))
+    elif defect == "missing-lock": lock.unlink()
+    elif defect == "misbound-id": lock.write_bytes(lock_bytes.replace(b"taskId: T-001", b"taskId: T-002"))
+    elif defect == "duplicate-task": tasks.write_bytes(task_bytes + task_bytes.splitlines(keepends=True)[-1])
+    elif defect == "duplicate-key": lock.write_bytes(lock_bytes + b"owner: worker-a\n")
+    elif defect == "missing-index": tasks.unlink()
+    else: lock.write_bytes(lock_bytes.replace(b"leaseSeconds: 3600", b"leaseSeconds: true"))
+    before = (tasks.read_bytes() if tasks.exists() else None, lock.read_bytes() if lock.exists() else None)
+    result = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    assert result.returncode != 0 and "[FAIL]" in result.stdout, result.stdout + result.stderr
+    assert (tasks.read_bytes() if tasks.exists() else None, lock.read_bytes() if lock.exists() else None) == before
+    # Restore the legitimate snapshot, then exercise the real completion gate.
+    tasks.write_bytes(task_bytes)
+    lock.write_bytes(lock_bytes)
+    complete_task(repo_root=repo, change_id="recheck", task_id="T-001", owner="worker-a")
+    # Historical DONE rows need not retain a lock.
+    lock.unlink()
+    result = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("enabled", [False, True, "true"])
 def test_main_frontend_selection_is_explicit_and_helper_runs_once(tmp_path, enabled):
     repo = copy_template_repo(str(tmp_path))
