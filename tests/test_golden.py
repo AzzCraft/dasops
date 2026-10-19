@@ -9,6 +9,7 @@ import yaml
 
 from dasops.adopt import audit_repo, normalize_repo, repair_doc_links, trace_check
 from dasops.locks import is_stale, read_lock
+from dasops.legacy_task_state import StateError
 from dasops.tasks import extract_task_verify_cmds, parse_tasks_index
 
 
@@ -29,25 +30,41 @@ def lint_task_rows(rows) -> list[str]:
 class LockSchemaGoldenTests(unittest.TestCase):
     """Verify lock file schema expectations."""
 
+    def read_fixture(self, path: Path):
+        # Corpus filenames describe cases; operational filenames bind task IDs.
+        raw = path.read_bytes()
+        task_id = yaml.safe_load(raw)["taskId"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / f"{task_id}.lock"
+            target.write_bytes(raw)
+            return read_lock(target)
+
     def test_valid_lock_corpus_round_trips_into_structured_lock(self) -> None:
         valid_locks = sorted((GOLDEN_ROOT / "locks" / "valid").glob("*.lock"))
         self.assertGreaterEqual(len(valid_locks), 3, "expected expanded valid lock corpus")
         for path in valid_locks:
-            lock = read_lock(path)
+            lock = self.read_fixture(path)
             self.assertIsNotNone(lock, f"expected valid lock: {path.name}")
+            # The descriptive corpus name must not bypass operational binding.
+            with self.assertRaisesRegex(StateError, "invalid_lock"):
+                read_lock(path)
 
     def test_invalid_lock_corpus_is_rejected(self) -> None:
         invalid_locks = sorted((GOLDEN_ROOT / "locks" / "invalid").glob("*.lock"))
         self.assertGreaterEqual(len(invalid_locks), 4, "expected expanded invalid lock corpus")
         for path in invalid_locks:
-            self.assertIsNone(read_lock(path), f"expected invalid lock: {path.name}")
+            with self.subTest(fixture=path.name):
+                with self.assertRaisesRegex(StateError, "invalid_lock"):
+                    self.read_fixture(path)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(read_lock(Path(tmp) / "missing.lock"))
 
     def test_stale_and_reclaim_fixtures_capture_lifecycle_semantics(self) -> None:
-        stale_lock = read_lock(GOLDEN_ROOT / "locks" / "valid" / "stale.lock")
+        stale_lock = self.read_fixture(GOLDEN_ROOT / "locks" / "valid" / "stale.lock")
         self.assertIsNotNone(stale_lock)
         self.assertTrue(is_stale(stale_lock), "stale fixture should be stale")
 
-        reclaimed = read_lock(GOLDEN_ROOT / "locks" / "valid" / "reclaimed.lock")
+        reclaimed = self.read_fixture(GOLDEN_ROOT / "locks" / "valid" / "reclaimed.lock")
         self.assertIsNotNone(reclaimed)
         self.assertGreaterEqual(reclaimed.version, 2, "reclaimed lock should bump lock version")
 

@@ -57,9 +57,12 @@ dassuite sync --tier oss
 If you are using this repo directly:
 
 ```bash
-git clone <this-repo> ~/tools/dasops
-cd ~/tools/dasops
-python3 -m pip install -r requirements.txt
+git clone https://github.com/AzzCraft/dasops.git
+cd dasops
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -e .
+dasops --help
 ```
 
 ### 2) Create a new product repo (CLI)
@@ -143,3 +146,25 @@ artifacts.
 ```bash
 bash ./scripts/verify
 ```
+
+## Cooperative task-state upgrade
+
+All participating writers in one local worktree must use the same new version.
+Stop old workers before upgrading. Markdown and YAML stay readable in their
+existing formats; `.dasops-local/` contains the ignored change guard and at most
+one fixed-pair recovery record. Readers encountering pending recovery refuse with
+`recovery_required`; the next mutating operation first rolls the recorded operation
+forward exactly. After a lost reply, query current state before retrying. Manual
+third-state bytes cause `recovery_conflict`: preserve the journal and both files,
+stop writers and reconcile the recorded before/after against the manual change.
+Do not delete a journal to force a claim. Separate clones and malicious writers
+are not coordinated by this local protocol; use the protected path when needed.
+
+`complete-task` runs the declared single-command gate for every supported task ID.
+`--force` does not skip verification. Historical status import uses explicit
+`--record-only --reason "..."`, records `verification=not_run`, and is not proof
+that checks passed. Gate execution releases the coordination guard for heartbeats;
+owner/token/task/gate are checked again before completion. Use a script for compound
+gates, not shell operators. `claim-task`/`claim-ready` set IN_PROGRESS only;
+`release-task` allows TODO/BLOCKED/PROPOSED, not IN_PROGRESS or DONE. Old DONE records
+are preserved without inventing verification history.

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .adopt import adopt_report, audit_repo, audit_report, normalize_report, trace_report
 from .doctor import run_doctor
-from .locks import inspect_lock, is_stale, read_lock, reclaim_lock, renew_lock, lock_path_for
+from .locks import inspect_lock, is_stale, read_lock, reclaim_lock, reclaim_lock_with_result, renew_lock, lock_path_for, claim_task_with_result, claim_ready_task_with_result
 from .scaffold import (
     claim_ready_task,
     claim_task,
@@ -72,67 +72,6 @@ def _strip_task_command(value: str) -> str:
     if match:
         return match.group(1).strip()
     return (value or "").strip()
-
-
-def _final_release_task_number(task_id: str) -> int | None:
-    match = re.fullmatch(r"T-(\d+)", task_id.strip())
-    if match is None:
-        return None
-    return int(match.group(1))
-
-
-def _is_final_release_task(task_id: str) -> bool:
-    number = _final_release_task_number(task_id)
-    return number is not None and number >= 168
-
-
-def _tail(text: str, limit: int = 800) -> str:
-    compact = (text or "").strip()
-    if len(compact) <= limit:
-        return compact
-    return compact[-limit:]
-
-
-def _verify_task_before_completion(repo_root: Path, change_id: str, task_id: str) -> None:
-    if not _is_final_release_task(task_id):
-        return
-
-    command = ""
-    for task in list_tasks(repo_root=repo_root, change_id=change_id):
-        if str(task.get("taskId")) == task_id:
-            command = _strip_task_command(str(task.get("verifyGate", "")))
-            break
-
-    if not command:
-        raise SystemExit(f"{task_id} has no verify gate; refusing to mark DONE.")
-
-    try:
-        argv = shlex.split(command, posix=True)
-    except ValueError as exc:
-        raise SystemExit(f"{task_id} verify gate is not a valid command: {exc}") from exc
-    if not argv or any(token in {"|", "||", "&&", ";", ">", ">>", "<"} for token in argv):
-        raise SystemExit(f"{task_id} verify gate must be one executable command without shell operators.")
-
-    env = os.environ.copy()
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env.setdefault("DAS_RELEASE_DONE_SWEEP_NESTED", "1")
-    proc = subprocess.run(
-        argv,
-        cwd=str(repo_root),
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=900,
-    )
-    if proc.returncode == 0:
-        return
-
-    detail = _tail(proc.stderr) or _tail(proc.stdout) or "no command output"
-    raise SystemExit(
-        f"{task_id} verify gate failed with exit {proc.returncode}; refusing to mark DONE.\n"
-        f"Command: {command}\n"
-        f"{detail}"
-    )
 
 
 def _resolve_repo_root(cwd: Path) -> Path:
@@ -448,6 +387,8 @@ def main(argv=None) -> int:
     p_complete.add_argument("--task-id", required=True)
     p_complete.add_argument("--owner", default=None)
     p_complete.add_argument("--force", action="store_true")
+    p_complete.add_argument("--record-only", action="store_true", help="Record historical completion without running a gate; requires --reason")
+    p_complete.add_argument("--reason", default="")
     p_complete.add_argument("--json", action="store_true")
     p_complete.add_argument("--repo-root", default=".")
 
@@ -853,6 +794,8 @@ def main(argv=None) -> int:
             print(json.dumps(payload, indent=2, ensure_ascii=False))
         if not payload["exists"]:
             return 1
+        if not payload["valid"]:
+            return 2
         if owner and not payload["ownerMatches"]:
             return 2
         return 0
@@ -912,7 +855,7 @@ def main(argv=None) -> int:
             raise SystemExit("Owner is empty. Provide --owner or set $DASOPS_OWNER.")
 
         try:
-            lock_path = claim_task(
+            lock_path, hints = claim_task_with_result(
                 repo_root=repo_root,
                 change_id=args.change_id,
                 task_id=args.task_id,
@@ -923,7 +866,14 @@ def main(argv=None) -> int:
         except SystemExit as exc:
             if args.json:
                 change_dir = repo_root / "openspec" / "changes" / args.change_id
-                existing = read_lock(lock_path_for(change_dir, args.task_id))
+                # Failure reporting must not rethrow while rereading the same
+                # corrupt/pending state, or imply this later read is atomic.
+                current_owner = None
+                try:
+                    existing = read_lock(lock_path_for(change_dir, args.task_id))
+                    current_owner = existing.owner if existing else None
+                except (SystemExit, OSError):
+                    pass
                 payload = {
                     "ok": False,
                     "task": "OPS-003",
@@ -931,14 +881,13 @@ def main(argv=None) -> int:
                     "changeId": args.change_id,
                     "taskId": args.task_id,
                     "requestedOwner": owner,
-                    "currentOwner": existing.owner if existing else None,
+                    "currentOwner": current_owner,
                     "message": str(exc),
                 }
                 print(json.dumps(payload, indent=2, ensure_ascii=False))
                 return 1
             raise
 
-        hints = read_task_hints(repo_root=repo_root, change_id=args.change_id, task_id=args.task_id)
         tasks_path = hints.get("tasks_path")
         owner_from_tasks = str(hints.get("owner", "") or owner).strip()
         status_from_tasks = str(hints.get("status", "") or args.status).strip()
@@ -1020,7 +969,7 @@ def main(argv=None) -> int:
         if not owner:
             raise SystemExit("Owner is empty. Provide --owner or set $DASOPS_OWNER.")
 
-        lock_path = claim_ready_task(
+        result = claim_ready_task_with_result(
             repo_root=repo_root,
             change_id=args.change_id,
             owner=owner,
@@ -1028,7 +977,7 @@ def main(argv=None) -> int:
             allow_preassigned=args.allow_preassigned,
         )
 
-        if lock_path is None:
+        if result is None:
             if args.json:
                 print(json.dumps({"ok": False, "error": "no_ready_task", "changeId": args.change_id}, indent=2))
             else:
@@ -1036,8 +985,8 @@ def main(argv=None) -> int:
                 print("Tip: run 'dasops list-tasks --change-id ...' and check Depends on / DONE status.")
             return 1
 
+        lock_path, hints = result
         task_id = lock_path.stem
-        hints = read_task_hints(repo_root=repo_root, change_id=args.change_id, task_id=task_id)
         tasks_path = hints.get("tasks_path")
         expected_branch = str(hints.get("branch", "") or "").strip()
         verify_cmds = list(hints.get("verify_cmds", []) or [])
@@ -1077,14 +1026,14 @@ def main(argv=None) -> int:
     # -----------------------------------------------------------------
     if args.cmd == "complete-task":
         owner = _normalize_owner(args.owner) if args.owner else _default_owner(repo_root)
-        if not args.force:
-            _verify_task_before_completion(repo_root, args.change_id, args.task_id)
         lock_path = complete_task(
             repo_root=repo_root,
             change_id=args.change_id,
             task_id=args.task_id,
             owner=owner,
             force=args.force,
+            record_only=args.record_only,
+            reason=args.reason,
         )
 
         payload = {
@@ -1093,6 +1042,8 @@ def main(argv=None) -> int:
             "taskId": args.task_id,
             "owner": owner,
             "status": "DONE",
+            "verification": "not_run" if args.record_only else "pass",
+            "reason": args.reason if args.record_only else "",
             "lock": _fmt_rel(repo_root, lock_path),
         }
         if args.json:
@@ -1316,8 +1267,7 @@ def main(argv=None) -> int:
     if args.cmd == "reclaim-lock":
         change_dir = repo_root / "openspec" / "changes" / args.change_id
         lock_file = lock_path_for(change_dir, args.task_id)
-        previous = read_lock(lock_file)
-        lp = reclaim_lock(
+        lp, previous, current = reclaim_lock_with_result(
             repo_root=repo_root,
             change_id=args.change_id,
             task_id=args.task_id,
@@ -1326,7 +1276,6 @@ def main(argv=None) -> int:
             force=args.force,
         )
         if getattr(args, "json", False):
-            current = read_lock(lp)
             payload = {
                 "ok": True,
                 "task": "OPS-003",

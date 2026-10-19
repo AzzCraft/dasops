@@ -1,18 +1,24 @@
-# DAS Tools v1.0.0 Threat Model
+# DASOps OSS Threat Model
 
-This threat model covers the CLI, private control plane, plugin/MCP integrations, CI templates, airgap installer, evidence storage, update channel, and support bundle workflow.
+Scope: the public source CLI/GUI, generated legacy product files and protected
+reference libraries. This distribution does not implement a hosted identity,
+tenant RBAC, billing, TUF-update, airgap or universal support-redaction platform.
 
-## STRIDE Coverage
+| Boundary | Actual control and limitation |
+|---|---|
+| Factory vs product | Explicit output directory; overwriting remains an operator action |
+| Cooperative task state | One worktree's change guard and fixed-pair recovery; malicious/manual writers and separate clones are outside that protocol |
+| Verification gates | Commands run without a shell, outside the state mutex; identity/token/gate is rechecked before completion |
+| Protected operations | Current installed authorization, exact candidates, SQLite CAS/budgets and original receipts; installation must protect its authority and evidence |
+| Candidate execution | Use the selected real restricted runtime; host-local diagnostics do not establish isolation |
+| Evidence and exports | Exact hashes/signatures have their stated purpose; no automatic redaction or authenticated approval from self-reported metadata |
 
-| Area | Spoofing | Tampering | Repudiation | Information disclosure | Denial of service | Elevation of privilege |
-| --- | --- | --- | --- | --- | --- | --- |
-| CLI and local verifier | Signed closure and release metadata | Canonical hashes and EvidenceBundle verification | Local audit event IDs | Redaction policy for logs and support | Offline mode and bounded replay | No shell execution through MCP read tools |
-| Control plane | Signed license and OIDC SSO | Append-only audit chain | Tenant-scoped audit export | Support bundle redaction | Rate limits and quota ledger | RBAC policy and approval gates |
-| Plugins and MCP | Signed plugin manifests | Registry trust index and revocation | Every tool call emits an audit event | SecretStorage and no plaintext token logging | Per-tool timeout and sandbox profile | Write tools require simulation, approval, and lock token |
-| CI and release | SLSA provenance and artifact signatures | SHA256SUMS and release truth pack | CI logs attached to evidence index | SBOM and notices omit customer data | Hermetic fixtures and mirror mode | Release jobs run least-privilege tokens |
-| Airgap and updates | TUF root and target roles | Snapshot and timestamp metadata | Installer audit log | No outbound telemetry by default | Offline retryable installer stages | KMS or Vault for release keys |
-
-The release gate fails closed when signatures, provenance, license policy, audit chain, evidence index, or task coverage checks do not pass.
+Untrusted candidates, external inputs and arbitrary local files do not supply
+trusted policy or approval. Synthetic TEST identities are not installation trust
+roots. See the [candidate boundaries](../../dasops/protected/candidates/README.md)
+and [data handling](DATA_BOUNDARY.md). Actual deployment permissions, identities,
+key custody and incident response belong to the installing operator. Existing
+source CI does not prove a whole production deployment.
 
 ## Finite candidate HTTP acquisition reference
 

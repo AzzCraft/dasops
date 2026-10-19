@@ -127,59 +127,67 @@ class TestReadLock(unittest.TestCase):
             result = read_lock(Path(tmp) / "nope.lock")
             self.assertIsNone(result)
 
-    def test_invalid_yaml_returns_none(self):
+    def test_invalid_yaml_raises_invalid_lock(self):
         with TemporaryDirectory() as tmp:
             p = Path(tmp) / "bad.lock"
             p.write_text("{{not yaml", encoding="utf-8")
-            self.assertIsNone(read_lock(p))
+            with self.assertRaises(SystemExit):
+                read_lock(p)
 
-    def test_missing_key_returns_none(self):
+    def test_missing_key_raises_invalid_lock(self):
         with TemporaryDirectory() as tmp:
             p = Path(tmp) / "partial.lock"
             _write_yaml(p, {"version": 2, "taskId": "T-001"})
-            self.assertIsNone(read_lock(p))
+            with self.assertRaises(SystemExit):
+                read_lock(p)
 
-    def test_version_zero_returns_none(self):
+    def test_version_zero_raises_invalid_lock(self):
         with TemporaryDirectory() as tmp:
             lock = _make_lock(version=0)
             p = Path(tmp) / "v0.lock"
             _write_yaml(p, _lock_as_dict(lock))
-            self.assertIsNone(read_lock(p))
+            with self.assertRaises(SystemExit):
+                read_lock(p)
 
-    def test_negative_lease_returns_none(self):
+    def test_negative_lease_raises_invalid_lock(self):
         with TemporaryDirectory() as tmp:
             lock = _make_lock(lease_seconds=-1)
             p = Path(tmp) / "neg.lock"
             _write_yaml(p, _lock_as_dict(lock))
-            self.assertIsNone(read_lock(p))
+            with self.assertRaises(SystemExit):
+                read_lock(p)
 
-    def test_bad_status_returns_none(self):
+    def test_bad_status_raises_invalid_lock(self):
         with TemporaryDirectory() as tmp:
             lock = _make_lock(status="INVALID")
             p = Path(tmp) / "badstatus.lock"
             _write_yaml(p, _lock_as_dict(lock))
-            self.assertIsNone(read_lock(p))
+            with self.assertRaises(SystemExit):
+                read_lock(p)
 
-    def test_updated_before_claimed_returns_none(self):
+    def test_updated_before_claimed_raises_invalid_lock(self):
         with TemporaryDirectory() as tmp:
             earlier = (_NOW - timedelta(hours=2)).isoformat()
             lock = _make_lock(claimed_at=_NOW_ISO, updated_at=earlier)
             p = Path(tmp) / "bad_order.lock"
             _write_yaml(p, _lock_as_dict(lock))
-            self.assertIsNone(read_lock(p))
+            with self.assertRaises(SystemExit):
+                read_lock(p)
 
-    def test_empty_owner_returns_none(self):
+    def test_empty_owner_raises_invalid_lock(self):
         with TemporaryDirectory() as tmp:
             lock = _make_lock(owner="  ")
             p = Path(tmp) / "blank_owner.lock"
             _write_yaml(p, _lock_as_dict(lock))
-            self.assertIsNone(read_lock(p))
+            with self.assertRaises(SystemExit):
+                read_lock(p)
 
-    def test_non_dict_returns_none(self):
+    def test_non_dict_raises_invalid_lock(self):
         with TemporaryDirectory() as tmp:
             p = Path(tmp) / "list.lock"
             p.write_text("- item\n", encoding="utf-8")
-            self.assertIsNone(read_lock(p))
+            with self.assertRaises(SystemExit):
+                read_lock(p)
 
 
 # ---------------------------------------------------------------------------

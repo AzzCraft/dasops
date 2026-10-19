@@ -8,6 +8,13 @@ python3 - "$@" <<'PY'
 from __future__ import annotations
 
 import json
+import argparse
+import sys
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+from contextlib import ExitStack
 import os
 import re
 import subprocess
@@ -154,17 +161,47 @@ def check_deterministic_layout() -> int:
     return 0
 
 
+class UniqueLockLoader(yaml.SafeLoader):
+    pass
+
+
+def unique_lock_mapping(loader, node):
+    result = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node)
+        if key in result:
+            raise ValueError("duplicate task lock field")
+        result[key] = loader.construct_object(value_node)
+    return result
+
+
+UniqueLockLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_lock_mapping)
+
+
 def check_task_lock_schema() -> int:
     changes_dir = REPO_ROOT / "openspec" / "changes"
     if not changes_dir.exists():
         return 0
     for lock_path in sorted(changes_dir.rglob("*.lock")):
-        data = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+        if not (lock_path.parent.parent / "tasks.md").is_file():
+            return fail(f"Task lock has no task index: {lock_path.relative_to(REPO_ROOT)}")
+        try:
+            data = yaml.load(lock_path.read_text(encoding="utf-8"), Loader=UniqueLockLoader)
+        except (ValueError, TypeError, yaml.YAMLError) as exc:
+            return fail(f"Invalid task lock: {lock_path.relative_to(REPO_ROOT)} ({type(exc).__name__})")
         if not isinstance(data, dict):
             return fail(f"Lock is not a YAML object: {lock_path.relative_to(REPO_ROOT)}")
         missing = sorted(LOCK_KEYS - set(data))
         if missing:
             return fail(f"Lock missing required keys {missing}: {lock_path.relative_to(REPO_ROOT)}")
+        if (set(data) - LOCK_KEYS - {"auditHistory"}
+                or any(type(data[key]) is not int or data[key] < 1 for key in ("version", "leaseSeconds"))
+                or any(not isinstance(data[key], str) or not data[key].strip()
+                       for key in LOCK_KEYS - {"version", "leaseSeconds"})
+                or data["taskId"] != lock_path.stem
+                or not isinstance(data.get("auditHistory", []), list)
+                or not all(isinstance(item, dict) for item in data.get("auditHistory", []))):
+            return fail(f"Invalid task lock fields: {lock_path.relative_to(REPO_ROOT)}")
     ok("structured task lock checks")
     return 0
 
@@ -180,6 +217,7 @@ def check_tasks_index_contract() -> int:
                 f"tasks.md missing canonical index header in {tasks_md.relative_to(REPO_ROOT)}"
             )
         header_idx = lines.index(TASK_INDEX_HEADER)
+        tasks = {}
         for raw in lines[header_idx + 2 :]:
             stripped = raw.strip()
             if not stripped.startswith("|"):
@@ -189,9 +227,12 @@ def check_tasks_index_contract() -> int:
             parts = [part.strip() for part in stripped.strip("|").split("|")]
             while len(parts) < 6:
                 parts.append("")
-            task_id, _title, _owner, status, _depends_on, verify_gate = parts[:6]
+            task_id, _title, owner, status, _depends_on, verify_gate = parts[:6]
             if not task_id:
                 continue
+            if task_id in tasks:
+                return fail(f"Duplicate task ID {task_id} in {tasks_md.relative_to(REPO_ROOT)}")
+            tasks[task_id] = (owner, status)
             if status not in TASK_ALLOWED_STATUSES:
                 return fail(
                     f"tasks.md row {task_id} has invalid status {status!r} in {tasks_md.relative_to(REPO_ROOT)}"
@@ -200,6 +241,19 @@ def check_tasks_index_contract() -> int:
                 return fail(
                     f"tasks.md row {task_id} missing verify gate command in {tasks_md.relative_to(REPO_ROOT)}"
                 )
+        lock_dir = tasks_md.parent / "task_locks"
+        if lock_dir.is_symlink():
+            return fail("Invalid task lock directory")
+        locked = set()
+        for lock_path in sorted(lock_dir.glob("*.lock")):
+            data = yaml.load(lock_path.read_text(encoding="utf-8"), Loader=UniqueLockLoader)
+            task_id = data["taskId"]
+            if tasks.get(task_id) != (data["owner"], data["status"]):
+                return fail(f"Inconsistent task state: {lock_path.relative_to(REPO_ROOT)}")
+            locked.add(task_id)
+        if any(status == "IN_PROGRESS" and task_id not in locked
+               for task_id, (_, status) in tasks.items()):
+            return fail(f"IN_PROGRESS task missing lock: {tasks_md.relative_to(REPO_ROOT)}")
     ok("tasks.md column/status contract checks")
     return 0
 
@@ -315,7 +369,7 @@ def maybe_run_cadence() -> int:
     return 0
 
 
-def main() -> int:
+def _checks(frontend: bool) -> int:
     rc = 0
     rc |= check_exists()
     if rc != 0:
@@ -323,13 +377,50 @@ def main() -> int:
     rc |= check_seed_contract()
     rc |= check_deterministic_layout()
     rc |= check_task_lock_schema()
+    if rc != 0:
+        return rc
     rc |= check_tasks_index_contract()
     rc |= check_stale_lock_semantics()
     rc |= check_tooling_lock_schema()
     rc |= check_extension_manifest_schema()
     rc |= check_master_doc_minimum()
+    config = yaml.safe_load((REPO_ROOT / "cadence.yaml").read_text())
+    if not isinstance(config, dict) or not isinstance(config.get("ui", {}), dict):
+        return fail("cadence.yaml ui must be an object")
+    enabled = config.get("ui", {}).get("enabled", False)
+    if type(enabled) is not bool:
+        return fail("cadence.yaml ui.enabled must be boolean")
+    if frontend or enabled:
+        child = subprocess.run([sys.executable, str(REPO_ROOT / "scripts/verify_frontend_evidence.py")], cwd=REPO_ROOT)
+        rc |= child.returncode
+    else:
+        ok("frontend evidence not applicable (legacy ui.enabled=false)")
+    return rc
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--frontend", action="store_true")
+    args = parser.parse_args()
+    # Same stable guard inode as DASOps writers; no read-side recovery.
+    with ExitStack() as stack:
+        for tasks in sorted((REPO_ROOT / "openspec/changes").glob("*/tasks.md")):
+            if fcntl is None:
+                return fail("unsupported task coordination platform")
+            meta = tasks.parent / ".dasops-local"
+            if meta.is_symlink():
+                return fail("invalid task coordination directory")
+            meta.mkdir(mode=0o700, exist_ok=True)
+            fd = os.open(meta / "coordination.guard", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            stream = stack.enter_context(os.fdopen(fd, "r+b"))
+            fcntl.flock(stream.fileno(), fcntl.LOCK_SH)
+            if os.path.lexists(meta / "pending.json"):
+                return fail("task state recovery_required; resume a DASOps writer before verification")
+        rc = _checks(args.frontend)
+    # Only snapshot reads need the shared guard. External verification must
+    # allow heartbeats/writers; complete-task rechecks its subject before DONE.
     if rc == 0:
-        rc |= maybe_run_cadence()
+        rc = maybe_run_cadence()
     if rc == 0:
         print("\nAll verify checks passed.")
     return rc

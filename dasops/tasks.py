@@ -200,12 +200,18 @@ def extract_task_owner_status(tasks_md: str, task_id: str) -> Tuple[str, str]:
 
 
 def read_task_hints(*, repo_root: Path, change_id: str, task_id: str) -> Dict[str, object]:
-    change_dir = repo_root / "openspec" / "changes" / change_id
-    tasks_path = change_dir / "tasks.md"
-    if not tasks_path.exists():
-        raise SystemExit(f"tasks.md not found: {tasks_path}")
+    # Local imports avoid the tasks/locks import cycle. Worker startup shares
+    # the same pending check and snapshot boundary as inspect/list.
+    from .legacy_task_state import guard
+    from .locks import _change, _snapshot
 
-    tasks_md = tasks_path.read_text(encoding="utf-8")
+    change_dir = _change(repo_root, change_id, task_id)
+    with guard(change_dir):
+        tasks_md, _, _ = _snapshot(change_dir)
+        return task_hints_from_text(tasks_md, change_dir / "tasks.md", task_id)
+
+
+def task_hints_from_text(tasks_md: str, tasks_path: Path, task_id: str) -> Dict[str, object]:
     owner, status = extract_task_owner_status(tasks_md, task_id)
     return {
         "owner": owner,

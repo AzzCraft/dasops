@@ -65,4 +65,4 @@ Checks that banned patterns are absent:
 
 Every push and PR triggers `.github/workflows/verify.yml`, which runs the full verify chain.
 
-Release candidates additionally run `.github/workflows/release.yml`, which gates on verify before creating a release.
+Release candidates can run the manually triggered `.github/workflows/release.yml` for verification, tool-asset build/install and evidence. It does not create a tag, move a ref or publish a GitHub Release; the authorized publisher performs those separate actions under `docs/RELEASE_PROCESS.md`.
