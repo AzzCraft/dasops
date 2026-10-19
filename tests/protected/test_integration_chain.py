@@ -566,19 +566,36 @@ def test_verification_after_revision_uses_explicit_original_completion_binding(v
 def test_verification_budget_is_serial_across_real_connections(verification_service):
     db,manager,options,_,_,_,_=verification_service
     db.connection.execute('UPDATE budgets SET ceiling=4')  # TEST installation budget.
-    barrier=threading.Barrier(2)
-    def start(index):
+    entered=threading.Event();release=threading.Event()
+    def start_first():
         other=CoordinationDatabase(db.path,authority_domain='domain')
+        def hold_writer(c,o,a,e):
+            allowed=options['authorize'](c,o,a,e)
+            entered.set()
+            assert release.wait(timeout=10)
+            return allowed
         try:
             consumer=VersionTreeManager(other,manager.candidates,ownership=OWNERS,tool_digest=D,policy_digest=D,
                 check_reverification=manager.check_reverification)
-            barrier.wait(timeout=5)
-            try:return consumer.start_reverification(KEY,**dict(options,business='check-'+str(index)))['newlyDispatched']
-            except CoordinationError:return False
+            return consumer.start_reverification(KEY,**dict(options,business='check-1',authorize=hold_writer))
         finally:other.close()
-    with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(start,[1,2]))
-    assert results.count(True)==1 and results.count(False)==1
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first=pool.submit(start_first)
+        try:
+            assert entered.wait(timeout=10)
+            # Busy is a documented bounded refusal, not a promise that another
+            # writer commits within 250 ms. Retry the whole operation below.
+            with pytest.raises(sqlite3.OperationalError,match='database is locked'):
+                manager.start_reverification(KEY,**dict(options,business='check-2'))
+            assert not db.connection.in_transaction
+        finally:release.set()
+        assert first.result(timeout=10)['newlyDispatched']
+    with pytest.raises(CoordinationError,match='shared budget absent or exceeded'):
+        manager.start_reverification(KEY,**dict(options,business='check-2'))
     assert db.connection.execute('SELECT reserved FROM budgets').fetchone()[0]==3
+    assert db.connection.execute("SELECT business_id FROM business_actions WHERE action_class='audit'").fetchall()[0][0]=='check-1'
+    assert db.connection.execute("SELECT COUNT(*) FROM business_actions WHERE action_class='audit'").fetchone()[0]==1
+    assert db.connection.execute('SELECT COUNT(*) FROM completions').fetchone()[0]==1
 
 
 @pytest.mark.parametrize('routed',[False,True])
