@@ -60,10 +60,33 @@ def test_optional_public_gui_has_an_immutable_direct_dependency() -> None:
     assert ">=" not in requirements
 
 
-def test_final_task_verify_gate_never_uses_a_shell() -> None:
-    source = (ROOT / "dasops" / "__main__.py").read_text(encoding="utf-8")
-    assert "argv = shlex.split(command, posix=True)" in source
-    assert "shell=True" not in source
+def test_final_task_verify_gate_never_uses_a_shell(tmp_path, monkeypatch) -> None:
+    import sys
+    from dasops import locks
+
+    script = tmp_path / "gate.py"
+    script.write_text("import json,sys\nfrom pathlib import Path\nPath('arguments.json').write_text(json.dumps(sys.argv[1:]))\n")
+    command = shlex.join([sys.executable, str(script)]) + ' "$(touch shell-marker)"'
+    change = tmp_path / "openspec/changes/sample"
+    change.mkdir(parents=True)
+    (change / "tasks.md").write_text(
+        "| Task ID | Title | Owner | Status | Depends On | Verify Gate |\n"
+        "|---|---|---|---|---|---|\n"
+        f"| T-001 | verify | worker-a | TODO | - | `{command}` |\n")
+    run = locks.subprocess.run
+    calls = []
+
+    def observed_run(argv, **kwargs):
+        assert isinstance(argv, list) and not kwargs.get("shell", False)
+        calls.append(argv)
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(locks.subprocess, "run", observed_run)
+    path = locks.complete_task(repo_root=tmp_path, change_id="sample", task_id="T-001", owner="worker-a")
+    assert len(calls) == 1
+    assert json.loads((tmp_path / "arguments.json").read_text()) == ["$(touch shell-marker)"]
+    assert not (tmp_path / "shell-marker").exists()
+    assert locks.read_lock(path).status == "DONE"
 
 
 @pytest.mark.parametrize('autoload', [True, False])

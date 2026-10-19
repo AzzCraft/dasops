@@ -215,7 +215,8 @@ class TemplateAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             scratch = Path(tmp_dir) / "factory"
             shutil.copytree(REPO_ROOT, scratch)
-            verify_frontend = scratch / "templates" / "das-product" / "scripts" / "verify-frontend"
+            verify_frontend = scratch / "templates" / "das-product" / "scripts" / "verify_frontend_evidence.py"
+            self.assertIn("artifacts/frontend/visualMatrix.json", verify_frontend.read_text(encoding="utf-8"))
             verify_frontend.write_text(
                 verify_frontend.read_text(encoding="utf-8").replace(
                     "artifacts/frontend/visualMatrix.json",
