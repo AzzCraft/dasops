@@ -16,16 +16,8 @@ if [[ -z "$OWNER" ]]; then
   fi
 fi
 
-LOCK_FILE="openspec/changes/${CHANGE_ID}/task_locks/${TASK_ID}.lock"
-if [[ ! -f "$LOCK_FILE" ]]; then
-  echo "Task lock not found: $LOCK_FILE" >&2
-  echo "Claim the task first:" >&2
-  echo "  # Pull mode: claim the next READY task (prints the claimed task id)" >&2
-  echo "  dasops claim-ready --change-id $CHANGE_ID --owner $OWNER" >&2
-  echo "  # Push mode: claim a specific task" >&2
-  echo "  dasops claim-task --change-id $CHANGE_ID --task-id $TASK_ID --owner $OWNER" >&2
-  echo "Or use the one-command flow:" >&2
-  echo "  DASOPS_OWNER=$OWNER dasops start-task --change-id $CHANGE_ID --task-id $TASK_ID" >&2
+if [[ -z "$OWNER" ]]; then
+  echo "An explicit owner or configured git user.name is required" >&2
   exit 2
 fi
 
@@ -41,10 +33,26 @@ if ! command -v dasops >/dev/null 2>&1; then
   exit 127
 fi
 
-if ! dasops lock-status --change-id "$CHANGE_ID" --task-id "$TASK_ID" --expect-owner "$OWNER" --json >/dev/null; then
-  echo "Task lock exists but is not owned by $OWNER" >&2
-  echo "Inspect the structured lock:" >&2
-  echo "  dasops lock-status --change-id $CHANGE_ID --task-id $TASK_ID --json" >&2
+# Complete prompt generation before starting the worker. Keep the observed token
+# private; this point-in-time precheck does not renew or supervise the child lease.
+WORKER_TMP="$(mktemp -d "${TMPDIR:-/tmp}/dasops-worker.XXXXXXXX")"
+chmod 700 "$WORKER_TMP"
+trap 'rm -rf -- "$WORKER_TMP"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+if ! dasops prompt --role worker --change-id "$CHANGE_ID" --task-id "$TASK_ID" --owner "$OWNER" >"$WORKER_TMP/prompt"; then
+  echo "Worker prompt generation failed; worker not started" >&2
+  exit 2
+fi
+if ! dasops lock-status --change-id "$CHANGE_ID" --task-id "$TASK_ID" --expect-owner "$OWNER" --require-active --json >"$WORKER_TMP/lock.json"; then
+  python3 - "$WORKER_TMP/lock.json" <<'PYERROR'
+import json, sys
+try:
+    reason = json.load(open(sys.argv[1])).get("error", "active_lock_check_failed")
+except (ValueError, OSError):
+    reason = "active_lock_check_failed"
+print("Worker not started: " + str(reason), file=sys.stderr)
+PYERROR
   exit 2
 fi
 
@@ -52,9 +60,7 @@ echo "Running Worker loop via Codex CLI"
 echo "- Change: $CHANGE_ID"
 echo "- Task:   $TASK_ID"
 echo "- Owner:  $OWNER"
-
-dasops prompt --role worker --change-id "$CHANGE_ID" --task-id "$TASK_ID" --owner "$OWNER" \
-  | codex exec --full-auto -
+codex exec --full-auto - <"$WORKER_TMP/prompt"
 
 echo
 echo "Next steps"

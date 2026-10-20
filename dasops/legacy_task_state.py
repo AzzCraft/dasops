@@ -131,7 +131,16 @@ def recover(change: Path) -> bool:
             if current != item["before"] and current != _image(data):
                 raise StateError("recovery_conflict")
             decoded.append((target, data))
-        # Validate BOTH targets before changing either one.
+        # Both images are validated. Re-establish the journal durability barrier
+        # even on retry after a failed rename-directory fsync or pre-created meta.
+        fd = os.open(pending, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        _sync_dir(pending.parent)
+        _sync_dir(change)
+        # No target may change until the pending record and its parents are synced.
         for target, data in decoded:
             if read_bytes(target) != data:
                 _install(target, data)
