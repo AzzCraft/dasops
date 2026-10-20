@@ -14,14 +14,17 @@ Each lock is stored as YAML under `openspec/changes/<change-id>/task_locks/<task
   "taskId": "TSK-001",
   "owner": "alice",
   "status": "IN_PROGRESS",
-  "claimedAt": "2026-04-09T09:00:00Z",
-  "updatedAt": "2026-04-09T10:00:00Z",
-  "heartbeatAt": "2026-04-09T10:00:00Z",
+  "claimedAt": "2026-04-09T09:00:00+00:00",
+  "updatedAt": "2026-04-09T10:00:00+00:00",
+  "heartbeatAt": "2026-04-09T10:00:00+00:00",
   "leaseSeconds": 3600,
   "lockToken": "uuid-v4",
   "auditHistory": []
 }
 ```
+
+UTC timestamps use the explicit `+00:00` offset emitted by the writer, which is
+also accepted by the lock reader on the minimum supported Python 3.10.
 
 OPS-003 diagnostics use `task: OPS-003` in JSON error and reclaim payloads. Reclaim records are appended to `auditHistory` with `fromOwner`, `toOwner`, `reason`, `oldToken`, and `at`.
 
