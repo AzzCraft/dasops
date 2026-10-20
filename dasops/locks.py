@@ -177,10 +177,14 @@ def read_lock(lock_path: Path) -> Optional[TaskLock]:
         return locks.get(lock_path.stem)
 
 
-def inspect_lock(*, repo_root: Path, change_id: str, task_id: str, expect_owner: str | None = None) -> dict[str, object]:
+def inspect_lock(*, repo_root: Path, change_id: str, task_id: str, expect_owner: str | None = None, require_active: bool = False) -> dict[str, object]:
     change = _change(repo_root, change_id, task_id)
     path = lock_path_for(change, task_id)
     payload = {"changeId": change_id, "taskId": task_id, "path": str(path), "exists": os.path.lexists(path), "valid": False, "ownerMatches": False, "lock": None}
+    payload["active"] = False
+    if require_active and not (expect_owner and expect_owner.strip()):
+        payload["error"] = "active_check_requires_owner"
+        return payload
     try:
         with state.guard(change):
             payload["exists"] = os.path.lexists(path)
@@ -190,6 +194,16 @@ def inspect_lock(*, repo_root: Path, change_id: str, task_id: str, expect_owner:
             if lock:
                 payload["ownerMatches"] = bool(expect_owner and lock.owner == expect_owner)
                 payload["lock"] = yaml.safe_load(_lock_bytes(lock))
+                payload["active"] = lock.status == "IN_PROGRESS" and not is_stale(lock)
+            if require_active:
+                if lock is None:
+                    payload["error"] = "missing_lock"
+                elif not payload["ownerMatches"]:
+                    payload["error"] = "owner_mismatch"
+                elif lock.status != "IN_PROGRESS":
+                    payload["error"] = "lock_not_in_progress"
+                elif not payload["active"]:
+                    payload["error"] = "stale_lock_requires_reclaim"
     except state.StateError as exc:
         payload["error"] = exc.reason
     return payload
@@ -203,6 +217,11 @@ def _claim(change: Path, text: str, rows: dict, locks: dict, task_id: str, owner
     existing = locks.get(task_id)
     if row.status == "DONE":
         raise state.StateError("completed_task_not_ready")
+    if existing and existing.status == "IN_PROGRESS":
+        if is_stale(existing):
+            raise state.StateError("stale_lock_requires_reclaim")
+        if existing.owner == owner:
+            return lock_path_for(change, task_id), task_hints_from_text(text, change / "tasks.md", task_id)
     if ((row.owner and not is_unassigned_owner(row.owner) and row.owner != owner) or (existing and existing.owner != owner)) and not force:
         raise state.StateError("owner_mismatch")
     now = _utc_now()

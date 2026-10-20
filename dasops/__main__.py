@@ -409,6 +409,7 @@ def main(argv=None) -> int:
     p_lock.add_argument("--change-id", required=True)
     p_lock.add_argument("--task-id", required=True)
     p_lock.add_argument("--expect-owner", default=None)
+    p_lock.add_argument("--require-active", action="store_true", help="Require a fresh IN_PROGRESS lock and --expect-owner")
     p_lock.add_argument("--json", action="store_true")
     p_lock.add_argument("--repo-root", default=".")
 
@@ -787,11 +788,14 @@ def main(argv=None) -> int:
             change_id=args.change_id,
             task_id=args.task_id,
             expect_owner=owner,
+            require_active=args.require_active,
         )
         if args.json:
             print(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
             print(json.dumps(payload, indent=2, ensure_ascii=False))
+        if args.require_active and payload.get("error"):
+            return 2
         if not payload["exists"]:
             return 1
         if not payload["valid"]:

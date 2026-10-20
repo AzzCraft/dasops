@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -349,6 +350,10 @@ def file_is_draft(path: Path) -> bool:
     except Exception:
         return True
 
+    return _text_is_draft(text)
+
+
+def _text_is_draft(text: str) -> bool:
     if DRAFT_MARKER in text:
         return True
     visible_text = re.sub(r"```.*?```", "", text, flags=re.S)
@@ -356,23 +361,49 @@ def file_is_draft(path: Path) -> bool:
     return re.search(r"<[^>]+>", visible_text) is not None
 
 
+def _read_status_snapshot(change_dir: Path, artifacts=()):
+    # locks imports this module: keep coordination imports local.
+    from . import legacy_task_state as state
+    from .locks import _snapshot
+
+    with state.guard(change_dir):
+        if os.path.lexists(change_dir / "tasks.md"):
+            text, by_id, _ = _snapshot(change_dir)
+            rows = list(by_id.values())
+        else:
+            lock_dir = change_dir / "task_locks"
+            if lock_dir.is_symlink() or (lock_dir.exists() and
+                    (not lock_dir.is_dir() or any(lock_dir.glob("*.lock")))):
+                raise state.StateError("missing_tasks_with_locks")
+            text, rows = None, []
+        texts = {"tasks.md": text}
+        for artifact in artifacts:
+            if artifact.generates not in texts:
+                raw = state.read_bytes(change_dir / artifact.generates)
+                texts[artifact.generates] = raw.decode("utf-8", errors="replace") if raw is not None else None
+    return texts, rows
+
+
 def task_index_is_complete(path: Path) -> bool:
-    try:
-        rows = parse_tasks_index(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
-        return False
-    return bool(rows) and all(row.status.strip().upper() == "DONE" for row in rows)
+    if path.name != "tasks.md":
+        raise ValueError("task completeness requires the managed tasks.md index")
+    _, rows = _read_status_snapshot(path.parent)
+    return bool(rows) and all(row.status == "DONE" for row in rows)
 
 
 def artifact_status(change_dir: Path, artifacts: List[Artifact]) -> Dict[str, str]:
+    return _artifact_status_from_snapshot(artifacts, *_read_status_snapshot(change_dir, artifacts))
+
+
+def _artifact_status_from_snapshot(artifacts, texts, rows):
     by_id = {artifact.id: artifact for artifact in artifacts}
 
     def is_done(artifact: Artifact) -> bool:
-        path = change_dir / artifact.generates
-        if not path.exists() or file_is_draft(path):
+        text = texts[artifact.generates]
+        if text is None or _text_is_draft(text):
             return False
         if artifact.generates == "tasks.md":
-            return task_index_is_complete(path)
+            return bool(rows) and all(row.status == "DONE" for row in rows)
         return True
 
     status: Dict[str, str] = {}
@@ -382,7 +413,7 @@ def artifact_status(change_dir: Path, artifacts: List[Artifact]) -> Dict[str, st
             previous = status.get(artifact.id)
             if is_done(artifact):
                 current = "DONE"
-            elif artifact.generates == "tasks.md" and (change_dir / artifact.generates).exists():
+            elif artifact.generates == "tasks.md" and texts[artifact.generates] is not None:
                 current = "BLOCKED"
             elif all(status.get(dep) == "DONE" or is_done(by_id[dep]) for dep in artifact.requires):
                 current = "READY"
@@ -402,9 +433,10 @@ def print_status(repo_root: Path, change_id: str) -> None:
     if not change_dir.exists():
         raise SystemExit(f"Change folder not found: {change_dir}")
 
-    status = artifact_status(change_dir, artifacts)
+    texts, rows = _read_status_snapshot(change_dir, artifacts)
+    status = _artifact_status_from_snapshot(artifacts, texts, rows)
     print(f"Change: {change_id}\n")
     for artifact in artifacts:
-        path = change_dir / artifact.generates
-        tag = " (draft)" if path.exists() and file_is_draft(path) else ""
+        text = texts[artifact.generates]
+        tag = " (draft)" if text is not None and _text_is_draft(text) else ""
         print(f"- {artifact.id:16s}  {status[artifact.id]:7s}{tag}  ({artifact.generates})")

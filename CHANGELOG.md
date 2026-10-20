@@ -2,6 +2,14 @@
 
 ## v1.2.0-beta.1 — Unreleased
 
+- Require an active matching lease before starting the generated Codex worker;
+  generate its prompt before launch and clean private temporary files on exit.
+- Read status from one guarded task/lock snapshot; pending recovery is an error.
+- Fresh same-owner claim retries are write-free. Stale claims, including forced
+  claims, now require reasoned `reclaim-lock`; use `renew-lock` for renewal.
+- Sync the validated recovery journal and both parent directories before any
+  target write, including retries after a failed durability barrier.
+
 - Add current physical Standard/Bundle consumption and authenticated candidate
   preparation, integration, Completion, and original-receipt recovery references.
 - Use VERSION as the sole package version author; Python wheel metadata spells
