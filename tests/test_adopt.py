@@ -45,6 +45,35 @@ class TestAuditRepo(unittest.TestCase):
 
 
 class TestNormalizeRepo(unittest.TestCase):
+    def test_conflicts_refuse_both_commands_without_writing(self):
+        from dasops.__main__ import main
+        from contextlib import redirect_stdout
+        import io
+        import json
+        for command in ("normalize-repo", "adopt-repo"):
+            for rel in ("openspec/changes", "docs", "scripts", "README.md"):
+                with self.subTest(command=command, conflict=rel), TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    sentinel = root / rel
+                    sentinel.parent.mkdir(parents=True, exist_ok=True)
+                    if rel == "README.md":
+                        sentinel.mkdir()
+                    else:
+                        sentinel.write_bytes(b"irreplaceable")
+                    before = sorted(str(p.relative_to(root)) for p in root.rglob("*"))
+                    inode = sentinel.stat().st_ino
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        code = main([command, str(root), "--json"])
+                    payload = json.loads(output.getvalue())
+                    self.assertNotEqual(code, 0)
+                    self.assertFalse(payload["ok"])
+                    self.assertTrue(any(rel in f for f in payload["findings"]))
+                    self.assertEqual(sentinel.stat().st_ino, inode)
+                    if sentinel.is_file():
+                        self.assertEqual(sentinel.read_bytes(), b"irreplaceable")
+                    self.assertEqual(before, sorted(str(p.relative_to(root)) for p in root.rglob("*")))
+
     def test_creates_missing_files(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -124,3 +153,33 @@ class TestTraceCheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_trace_rejects_type_conflict_and_version_substrings(tmp_path):
+    from dasops.adopt import trace_report
+    normalize_repo(tmp_path)
+    (tmp_path / 'VERSION').write_text('1.0.0')
+    for version, ok in [('11.0.0', False), ('1.0.0-beta.1', False), ('1.0.0', True)]:
+        (tmp_path / 'CHANGELOG.md').write_text(f'## {version}\n')
+        assert trace_report(tmp_path)['ok'] is ok
+    (tmp_path / 'LICENSE').unlink()
+    (tmp_path / 'LICENSE').mkdir()
+    assert not trace_report(tmp_path)['ok']
+
+
+def test_link_repair_preserves_valid_history_and_requires_real_destination(tmp_path):
+    from dasops.repair_doc_links import repair_tree
+    docs = tmp_path / 'docs'; docs.mkdir()
+    link = docs / 'guide.md'
+    link.write_text('[spec](../standard-v1.4.0/SPECIFICATION.md)')
+    before = link.read_bytes()
+    assert repair_tree(tmp_path).edits == 0
+    current = tmp_path / 'standard'; current.mkdir()
+    (current / 'SPECIFICATION.md').write_text('current')
+    historical = tmp_path / 'standard-v1.4.0'; historical.mkdir()
+    (historical / 'SPECIFICATION.md').write_text('historical')
+    assert repair_tree(tmp_path).edits == 0 and link.read_bytes() == before
+    (historical / 'SPECIFICATION.md').unlink()
+    assert repair_tree(tmp_path).edits == 1
+    assert '../standard/SPECIFICATION.md' in link.read_text()
+    assert repair_tree(tmp_path).edits == 0

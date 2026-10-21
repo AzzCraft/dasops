@@ -61,17 +61,6 @@ case "$TIER" in
     exit 2 ;;
 esac
 
-if [[ -d "$VENDOR_DIR" ]]; then
-  if [[ "$FORCE" != "1" ]]; then
-    echo "vendor/cadence already exists: $VENDOR_DIR" >&2
-    echo "Re-run with --force to replace it." >&2
-    exit 1
-  fi
-  rm -rf "$VENDOR_DIR"
-fi
-
-mkdir -p "$VENDOR_DIR"
-
 url_for_repo() {
   local repo="$1"
   if [[ -n "$ORG" ]]; then
@@ -156,12 +145,46 @@ install_by_cloning() {
 
 }
 
+# Validate inputs and prerequisites before creating or replacing any installation.
+if [[ -n "$FROM_SUITE" ]]; then
+  [[ -z "$ORG" && -z "$GIT_BASE" && "$USE_SSH" == "0" ]] || { echo "Choose one source mode" >&2; exit 2; }
+  [[ -d "$FROM_SUITE" ]] || { echo "Suite source not found" >&2; exit 1; }
+  FROM_SUITE="$(cd "$FROM_SUITE" && pwd)"
+  [[ -d "$FROM_SUITE/../cadence-oss" ]] || { echo "Cadence source not found" >&2; exit 1; }
+  command -v rsync >/dev/null
+else
+  [[ -n "$ORG" || -n "$GIT_BASE" ]] || { echo "Clone mode requires --git-base, --org, or DAS_SUITE_GIT_BASE." >&2; exit 2; }
+  command -v git >/dev/null
+  url_for_repo cadence-oss >/dev/null
+fi
+[[ ! -L "$ROOT_DIR/vendor" && ! -L "$VENDOR_DIR" ]] || { echo "Vendor links are unsupported" >&2; exit 1; }
+if [[ -e "$VENDOR_DIR" ]]; then
+  [[ -d "$VENDOR_DIR" && "$FORCE" == "1" ]] || { echo "vendor/cadence already exists; use --force for a directory" >&2; exit 1; }
+fi
+final_vendor="$VENDOR_DIR"
+mkdir -p "$ROOT_DIR/vendor"
+staging="$(mktemp -d "$ROOT_DIR/vendor/.cadence-install.XXXXXX")"
+cleanup() {
+  local code=$?
+  if [[ -d "$staging/previous" && ! -e "$final_vendor" ]]; then
+    mv "$staging/previous" "$final_vendor" || { echo "Restore previous install from $staging/previous" >&2; return 1; }
+  fi
+  rm -rf -- "$staging"
+  return "$code"
+}
+trap cleanup EXIT
+VENDOR_DIR="$staging/new"
+mkdir "$VENDOR_DIR"
 if [[ -n "$FROM_SUITE" ]]; then
   install_from_suite "$FROM_SUITE"
 else
   install_by_cloning
 fi
 
+[[ -d "$VENDOR_DIR/cadence-oss" ]] || { echo "Incomplete Cadence installation" >&2; exit 1; }
+if [[ -d "$final_vendor" ]]; then mv "$final_vendor" "$staging/previous"; fi
+mv "$VENDOR_DIR" "$final_vendor"
+VENDOR_DIR="$final_vendor"
 echo
 echo "Cadence installed under: $VENDOR_DIR"
 

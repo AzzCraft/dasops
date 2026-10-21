@@ -163,9 +163,18 @@ class RemediationSpecTests(unittest.TestCase):
                 dest_dir=tmp_root / "product",
                 master_doc_path=REPO_ROOT / "templates" / "das-product" / "docs" / "master_doc.md",
                 ui_spec_path=REPO_ROOT / "templates" / "das-product" / "docs" / "ui_spec.md",
-                init_git=False,
+                init_git=True,
             )
 
+            baseline = subprocess.run(
+                ["bash", "scripts/verify"], cwd=repo, check=False,
+                capture_output=True, text=True,
+            )
+            self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+            # The template no longer contains placeholder residue. Inject the
+            # fault explicitly so a pending Git pin cannot make this test pass.
+            master_doc = repo / "docs" / "master_doc.md"
+            master_doc.write_text(master_doc.read_text(encoding="utf-8") + "\nTBD\n", encoding="utf-8")
             result = subprocess.run(
                 ["bash", "scripts/verify"],
                 cwd=repo,
@@ -175,12 +184,7 @@ class RemediationSpecTests(unittest.TestCase):
             )
             combined = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, combined)
-            self.assertTrue(
-                "unresolved" in combined
-                or "pinState is pending" in combined
-                or "must be a real git commit" in combined,
-                combined,
-            )
+            self.assertIn("docs/master_doc.md contains unresolved residue: 'TBD'", combined)
 
     # --- OPS-VENDOR-001 (completed): template lock has no placeholder pins ---
     def test_ops_vendor_001_template_lock_no_placeholder_pins(self) -> None:

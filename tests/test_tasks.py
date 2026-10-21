@@ -88,16 +88,14 @@ class TestParseTasksIndex(unittest.TestCase):
         rows = parse_tasks_index("# Tasks\n\nSome text but no table.\n")
         self.assertEqual(rows, [])
 
-    def test_short_row_padded(self):
+    def test_short_row_rejected(self):
         md = """\
 | Task ID | Title | Owner | Status | Depends On | Verify Gate |
 | ------- | ----- | ----- | ------ | ---------- | ----------- |
 | T-X | Short |
 """
-        rows = parse_tasks_index(md)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].task_id, "T-X")
-        self.assertEqual(rows[0].owner, "")
+        with self.assertRaisesRegex(ValueError, "six columns"):
+            parse_tasks_index(md)
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +104,19 @@ class TestParseTasksIndex(unittest.TestCase):
 
 
 class TestFindTaskSection(unittest.TestCase):
+    def test_space_containing_indexed_id_does_not_match_shorter_task(self):
+        header = "| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n"
+        text = (header + "| build | short | - | TODO | - | true |\n"
+                "| build app | long | - | TODO | - | true |\n\n"
+                "### build app: Long task\n- Owner: long-owner\n- Status: TODO\n- Branch: `long`\n\n"
+                "### build: Short task\n- Owner: short-owner\n- Status: TODO\n- Branch: `short`\n")
+        self.assertEqual(extract_task_branch(text, "build"), "short")
+        self.assertEqual(extract_task_branch(text, "build app"), "long")
+        updated, changed = update_tasks_md_text(text, "build", "new-short", "IN_PROGRESS")
+        self.assertTrue(changed)
+        self.assertIn("### build app: Long task\n- Owner: long-owner\n- Status: TODO", updated)
+        self.assertIn("### build: Short task\n- Owner: new-short\n- Status: IN_PROGRESS", updated)
+
     def test_finds_section(self):
         lines = SAMPLE_TASKS_MD.splitlines(keepends=True)
         result = find_task_section(lines, "T-001")
@@ -406,3 +417,29 @@ class TestArtifactStatus(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestReviewedTaskMarkdown(unittest.TestCase):
+    def test_escaped_pipe_fences_and_exact_detail_binding(self):
+        active = SAMPLE_TASKS_MD.replace("First task", r"First \| task")
+        example = SAMPLE_TASKS_MD.replace("T-001", "EXAMPLE")
+        text = "~~~markdown\n" + example + "~~~\n\n" + active
+        rows = parse_tasks_index(text)
+        self.assertEqual(rows[0].title, r"First \| task")
+        self.assertEqual(rows[0].owner, "alice")
+        updated, _ = update_tasks_md_text(text, "T-001", "carol", "IN_PROGRESS")
+        self.assertTrue(updated.startswith("~~~markdown\n" + example + "~~~\n"))
+        self.assertEqual(parse_tasks_index(updated)[0].owner, "carol")
+        details = "### T-001.1\n- Branch: `wrong`\n### T-001: Main task\n- Branch: `right`\n"
+        self.assertEqual(extract_task_branch(details, "T-001"), "right")
+        self.assertEqual(extract_task_verify_cmds("### T-1\n- Verification: `python3 -m pytest tests/test_x.py`\n", "T-1"), ["python3 -m pytest tests/test_x.py"])
+        with self.assertRaisesRegex(ValueError, "multiple active"):
+            parse_tasks_index(active + "\n" + SAMPLE_TASKS_MD)
+
+    def test_dependency_ids_and_artifact_schema(self):
+        self.assertEqual(split_deps('"Task one", T-2', {"Task one": None, "T-2": None}), ["Task one", "T-2"])
+        from dasops.tasks import validate_artifacts
+        for artifacts in ([Artifact("x", "x.md", []), Artifact("x", "y.md", [])],
+                          [Artifact("x", "x.md", "y")], [Artifact("x", "x.md", ["missing"])]):
+            with self.subTest(artifacts=artifacts), self.assertRaises(SystemExit):
+                validate_artifacts(artifacts)
+        validate_artifacts([Artifact("x", "x.md", []), Artifact("y", "y.md", ["x"])])

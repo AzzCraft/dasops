@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if (( BASH_VERSINFO[0] < 4 )); then
+  echo "DASOps verification requires Bash 4.0 or later (mapfile support)." >&2
+  exit 2
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -52,13 +56,14 @@ test -f "$manifest" || {
   echo "missing verification manifest: $manifest" >&2
   exit 1
 }
-mapfile -t public_test_paths < <(python3 - "$manifest" <<'PY'
+public_test_selection="$(python3 - "$manifest" <<'PY'
 import json
 import sys
+from pathlib import PurePosixPath
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 minimum = payload.get("minimumCollectedTests")
-if not isinstance(minimum, int) or minimum < 1:
+if type(minimum) is not int or minimum < 1:
     raise SystemExit("verification manifest minimumCollectedTests must be a positive integer")
 paths = payload.get("publicTestPaths")
 if not isinstance(paths, list) or not paths or not all(isinstance(path, str) for path in paths):
@@ -66,11 +71,12 @@ if not isinstance(paths, list) or not paths or not all(isinstance(path, str) for
 if len(paths) != len(set(paths)):
     raise SystemExit("verification manifest publicTestPaths must not contain duplicates")
 for path in paths:
-    if not path.startswith("tests/"):
+    if not path.startswith("tests/") or ".." in PurePosixPath(path).parts or "\n" in path or "\r" in path:
         raise SystemExit(f"verification manifest contains a non-public test path: {path}")
-    print(path)
+print("\n".join(paths))
 PY
-)
+)"
+mapfile -t public_test_paths <<<"$public_test_selection"
 minimum_collected_tests="$(python3 - "$manifest" <<'PY'
 import json
 import sys

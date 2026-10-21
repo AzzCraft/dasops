@@ -409,8 +409,25 @@ def audit_repo(repo_root: Path) -> AuditResult:
     return AuditResult(repo_root=repo_root, findings=findings)
 
 
+def _normalization_conflicts(repo_root: Path) -> list[str]:
+    conflicts: set[str] = set()
+    for rel, kind in {**REQUIRED_PATHS, "cadence.yaml": "file", ".dasops": "dir"}.items():
+        target = repo_root / rel
+        for parent in target.parents:
+            if parent == repo_root:
+                break
+            if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
+                conflicts.add(f"{parent.relative_to(repo_root)} must be a real directory")
+        if target.is_symlink() or (target.exists() and (target.is_dir() if kind == "dir" else target.is_file()) is False):
+            conflicts.add(f"{rel} must be a real {kind}")
+    return sorted(conflicts)
+
+
 def normalize_repo(repo_root: Path) -> AuditResult:
     """Audit and automatically create missing governance baseline files."""
+    conflicts = _normalization_conflicts(repo_root)
+    if conflicts:
+        return AuditResult(repo_root=repo_root, findings=conflicts)
     result = audit_repo(repo_root)
     repaired: list[str] = []
     for finding in result.findings:
@@ -430,7 +447,7 @@ def normalize_repo(repo_root: Path) -> AuditResult:
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.name == "verify":
-                    target.write_text("#!/usr/bin/env bash\nset -euo pipefail\necho \"verify: ok\"\n", encoding="utf-8")
+                    target.write_text("#!/usr/bin/env bash\nset -euo pipefail\necho \"verify: not_configured; replace this placeholder with the project verification gate\" >&2\nexit 2\n", encoding="utf-8")
                     target.chmod(0o755)
                 elif target.suffix in (".md", ".txt", ""):
                     target.write_text(
@@ -440,13 +457,6 @@ def normalize_repo(repo_root: Path) -> AuditResult:
                 else:
                     target.write_text("", encoding="utf-8")
                 repaired.append(f"created {rel}")
-        elif finding.endswith("must be a directory"):
-            rel = finding[: -len(" must be a directory")]
-            target = repo_root / rel
-            if target.exists() and target.is_file():
-                target.unlink()
-            target.mkdir(parents=True, exist_ok=True)
-            repaired.append(f"normalized {rel} to directory")
     return AuditResult(repo_root=repo_root, findings=result.findings, repaired=repaired)
 
 
@@ -475,6 +485,12 @@ def audit_report(repo_root: Path) -> dict[str, object]:
 
 def adopt_report(repo_root: Path) -> dict[str, object]:
     result = normalize_repo(repo_root)
+    conflicts = _normalization_conflicts(repo_root) or audit_repo(repo_root).findings
+    if conflicts:
+        return {"schemaVersion": 1, "task": TASK_ID, "command": "adopt-repo",
+                "ok": False, "repoRoot": str(repo_root), "findings": conflicts,
+                "repairedArtifacts": [], "docLinkRepairs": [], "docLinkFilesChanged": []}
+
     evidence_dir = repo_root / ".dasops"
     evidence_dir.mkdir(parents=True, exist_ok=True)
     evidence = evidence_dir / "adoption_evidence.json"
@@ -492,6 +508,12 @@ def adopt_report(repo_root: Path) -> dict[str, object]:
 
 def normalize_report(repo_root: Path) -> dict[str, object]:
     result = normalize_repo(repo_root)
+    conflicts = _normalization_conflicts(repo_root) or audit_repo(repo_root).findings
+    if conflicts:
+        return {"schemaVersion": 1, "task": TASK_ID, "command": "normalize-repo",
+                "ok": False, "repoRoot": str(repo_root), "findings": conflicts,
+                "repairedArtifacts": [], "docLinkRepairs": [], "docLinkFilesChanged": []}
+
     repair = _get_repair_tree()(repo_root)
     return {
         "schemaVersion": 1,
@@ -508,19 +530,14 @@ def normalize_report(repo_root: Path) -> dict[str, object]:
 def trace_report(repo_root: Path) -> dict[str, object]:
     audit = audit_repo(repo_root)
     trace_issues = trace_check(repo_root)
-    problems = [
-        {
-            "artifact": artifact,
-            "message": f"{TASK_ID} trace-check missing artifact: {artifact}",
-        }
-        for artifact in _missing_artifacts(audit.findings)
-    ]
+    problems = [{"artifact": "layout", "message": f"{TASK_ID} trace-check: {finding}"}
+                for finding in audit.findings]
     problems.extend(
         {"artifact": "trace", "message": f"{TASK_ID} trace-check: {issue}"}
         for issue in trace_issues
     )
     ok = not problems
-    kinds = ["requirements", "tasks", "verify", "evidence"] if ok else []
+    kinds = ["layout", "version-changelog"] if ok else []
     return {
         "schemaVersion": 1,
         "task": TASK_ID,
@@ -528,11 +545,8 @@ def trace_report(repo_root: Path) -> dict[str, object]:
         "ok": ok,
         "repoRoot": str(repo_root),
         "kinds": kinds,
-        "relations": [
-            {"from": "requirements", "to": "tasks"},
-            {"from": "tasks", "to": "verify"},
-            {"from": "verify", "to": "evidence"},
-        ] if ok else [],
+        "scope": "layout-and-version-only",
+        "relations": [],
         "problems": problems,
     }
 
@@ -544,6 +558,8 @@ def repair_doc_links(repo_root: Path) -> list[str]:
     if not docs_dir.is_dir():
         return broken
     for md in docs_dir.rglob("*.md"):
+        if not md.is_file() or md.is_symlink():
+            continue
         content = md.read_text(errors="replace")
         # Simple bracket-link scanner: [text](target)
         import re
@@ -566,17 +582,17 @@ def trace_check(repo_root: Path) -> list[str]:
     """Verify that key artifacts trace back to the standard."""
     issues: list[str] = []
     version_file = repo_root / "VERSION"
-    if version_file.exists():
+    if version_file.is_file():
         version = version_file.read_text().strip()
         if not version:
             issues.append("VERSION file is empty")
     else:
         issues.append("VERSION file missing")
     changelog = repo_root / "CHANGELOG.md"
-    if changelog.exists():
+    if changelog.is_file():
         content = changelog.read_text(errors="replace")
-        if version_file.exists():
+        if version_file.is_file():
             ver = version_file.read_text().strip()
-            if ver and ver not in content:
+            if ver and re.search(r"(?<![\w.+-])" + re.escape(ver) + r"(?![\w.+-])", content) is None:
                 issues.append(f"CHANGELOG.md does not mention current version {ver}")
     return issues

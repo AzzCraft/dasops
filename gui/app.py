@@ -1,3 +1,4 @@
+import shlex
 import tempfile
 from pathlib import Path
 
@@ -135,7 +136,7 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 else:
                     st.success("Cadence installed under vendor/cadence")
                 st.code(result.stdout or "", language="bash")
-            st.code(f"cd {out}\n./scripts/verify", language="bash")
+            st.code(f"cd {shlex.quote(str(out))}\n./scripts/verify", language="bash")
             # CLI-equivalent hints for GUI-vs-CLI parity.
             # These ensure the GUI user knows the corresponding CLI commands.
             # Status values: TODO, IN_PROGRESS, DONE, BLOCKED, PROPOSED
@@ -148,6 +149,8 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 "- Frontend gate checks matrix structure and evidence-file presence; visual comparison requires your product's actual UI tests\n"
                 "- Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."
             )
+        except (SystemExit, RuntimeError) as e:
+            st.error(str(e))
         except Exception as e:
             st.exception(e)
         finally:

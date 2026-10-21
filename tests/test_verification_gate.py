@@ -114,3 +114,36 @@ def test_explicit_timeout_entry_works_with_and_without_autoload(tmp_path, autolo
     fast = subprocess.run([*command, '--basetemp', str(tmp_path / 'fast-run')], cwd=sample,
                           env=env, capture_output=True, text=True, timeout=15)
     assert fast.returncode == 0 and '2 passed' in fast.stdout, fast.stdout + fast.stderr
+
+
+def test_public_test_manifest_covers_all_non_internal_files():
+    manifest = json.loads((ROOT / 'tests/verification_manifest.json').read_text())
+    covered = set()
+    for selected in manifest['publicTestPaths']:
+        path = ROOT / selected
+        covered.update(p.relative_to(ROOT).as_posix() for p in
+                       (path.rglob('test_*.py') if path.is_dir() else [path]))
+    actual = {p.relative_to(ROOT).as_posix() for p in (ROOT / 'tests').rglob('test_*.py')}
+    excluded = manifest.get('internalTestExclusions', {})
+    assert all(isinstance(reason, str) and reason.strip() for reason in excluded.values())
+    assert not covered.intersection(excluded)
+    assert not actual - covered - set(excluded), 'public tests missing from verification manifest'
+
+
+@pytest.mark.parametrize('paths', [
+    ['private/test.py', 'tests/test_ok.py'],
+    ['tests/test_ok.py', 'private/test.py'],
+    ['tests/test_ok.py', 'private/test.py', 'tests/another.py'],
+    ['private/test.py'], ['tests/../private/test.py'],
+    ['tests/test_ok.py', 'tests/test_ok.py'], [12], [],
+])
+def test_manifest_selection_propagates_failure_before_pytest(tmp_path, paths):
+    import subprocess
+    script = (ROOT / 'scripts/verify').read_text()
+    start = script.index('public_test_selection=')
+    end = script.index('minimum_collected_tests=', start)
+    manifest = tmp_path / 'manifest.json'
+    manifest.write_text(json.dumps({'minimumCollectedTests': 1, 'publicTestPaths': paths}))
+    phase = 'set -euo pipefail\nmanifest="$1"\n' + script[start:end] + '\necho TEST_SELECTION_ACCEPTED\n'
+    proc = subprocess.run(['bash', '-c', phase, 'test', str(manifest)], capture_output=True, text=True)
+    assert proc.returncode != 0 and 'TEST_SELECTION_ACCEPTED' not in proc.stdout

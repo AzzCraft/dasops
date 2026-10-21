@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from jsonschema import Draft202012Validator
+from referencing import Registry
 
 
 REPO_ROOT = Path.cwd()
@@ -19,11 +21,11 @@ def ok(message: str) -> None:
 def require_non_empty_dir(path: Path, label: str) -> None:
     if not path.is_dir():
         fail(f"missing frontend evidence directory: {path.as_posix()}")
-    if not any(path.iterdir()):
-        fail(f"{label} dir must be non-empty: {path.as_posix()}")
+    if path.is_symlink() or not any(p.is_file() and not p.is_symlink() and not any(a.is_symlink() for a in p.parents if a != path.parent) for p in path.rglob("*")):
+        fail(f"{label} dir must contain an ordinary evidence file: {path.as_posix()}")
 
 
-def load_visual_matrix_schema(path: Path) -> None:
+def load_visual_matrix_schema(path: Path) -> dict:
     if not path.is_file():
         fail(f"missing visualMatrix schema: {path.as_posix()}")
     try:
@@ -31,6 +33,8 @@ def load_visual_matrix_schema(path: Path) -> None:
     except json.JSONDecodeError as exc:
         fail(f"invalid visualMatrix schema JSON: {exc}")
 
+    if not isinstance(schema, dict):
+        fail("visualMatrix schema must be an object")
     properties = schema.get("properties")
     if not isinstance(properties, dict):
         fail("visualMatrix schema must declare properties")
@@ -41,6 +45,7 @@ def load_visual_matrix_schema(path: Path) -> None:
         fail(f"visualMatrix schema required keys must be {list(VISUAL_MATRIX_KEYS)}")
     if set(properties) != set(VISUAL_MATRIX_KEYS):
         fail(f"visualMatrix schema properties must be {list(VISUAL_MATRIX_KEYS)}")
+    return schema
 
 
 def validate_visual_matrix_payload(payload: object) -> None:
@@ -56,7 +61,7 @@ def validate_visual_matrix_payload(payload: object) -> None:
 
 visual_matrix = REPO_ROOT / "artifacts/frontend/visualMatrix.json"
 visual_matrix_schema = REPO_ROOT / "openspec" / "schemas" / "das-standard" / "visual_matrix.schema.json"
-load_visual_matrix_schema(visual_matrix_schema)
+schema = load_visual_matrix_schema(visual_matrix_schema)
 if not visual_matrix.is_file():
     fail(f"missing frontend evidence file: {visual_matrix.as_posix()}")
 try:
@@ -65,6 +70,11 @@ except json.JSONDecodeError as exc:
     fail(f"invalid visualMatrix.json: {exc}")
 
 validate_visual_matrix_payload(payload)
+try:
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema, registry=Registry()).validate(payload)
+except Exception as exc:
+    fail(f"visualMatrix schema validation failed: {exc}")
 
 baseline_dir = REPO_ROOT / "artifacts/frontend/baseline/"
 screenshots_dir = REPO_ROOT / "artifacts/frontend/screenshots/"

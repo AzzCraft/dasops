@@ -5,12 +5,13 @@ import shlex
 import re
 import subprocess
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 from .adopt import adopt_report, audit_repo, audit_report, normalize_report, trace_report
 from .doctor import run_doctor
-from .locks import inspect_lock, is_stale, read_lock, reclaim_lock, reclaim_lock_with_result, renew_lock, lock_path_for, claim_task_with_result, claim_ready_task_with_result
+from .locks import VerificationFailure, preflight_claim, inspect_lock, is_stale, read_lock, reclaim_lock, reclaim_lock_with_result, renew_lock, lock_path_for, claim_task_with_result, claim_ready_task_with_result
 from .scaffold import (
     claim_ready_task,
     claim_task,
@@ -101,11 +102,8 @@ def _git_worktree_clean(repo_root: Path) -> bool:
 
 
 def _normalize_owner(value: str) -> str:
-    v = (value or "").strip()
-    # Replace whitespace and unsafe chars with '-'
-    v = re.sub(r"[^a-zA-Z0-9._-]+", "-", v)
-    v = re.sub(r"-+", "-", v).strip("-")
-    return v
+    from .identities import normalize_owner
+    return normalize_owner(value)
 
 
 def _default_owner(repo_root: Path) -> str:
@@ -152,8 +150,8 @@ def _slugify(value: str) -> str:
 def _make_change_id(intent: str) -> str:
     slug = _slugify(intent)
     slug = slug[:40] if slug else "change"
-    ts = datetime.now().strftime("%Y%m%d-%H%M")
-    return f"chg-{ts}-{slug}"
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"chg-{ts}-{slug}-{uuid.uuid4().hex[:8]}"
 
 
 def _pick_base_branch(repo_root: Path) -> str:
@@ -167,14 +165,8 @@ def _pick_base_branch(repo_root: Path) -> str:
 
 
 def _default_factory_root() -> Path:
-    candidates = [
-        Path(__file__).resolve().parents[1],
-        Path(sys.prefix),
-    ]
-    for candidate in candidates:
-        if (candidate / "templates" / "das-product").is_dir():
-            return candidate
-    return candidates[0]
+    from .repo_factory import default_factory_root
+    return default_factory_root()
 
 
 def _fmt_rel(repo_root: Path, p: Path) -> str:
@@ -251,7 +243,7 @@ def main(argv=None) -> int:
     p_init = sub.add_parser("init", help="(Product repo) Overwrite docs/master_doc.md and docs/ui_spec.md")
     p_init.add_argument("--master-doc", required=True, help="Path to master_doc.md")
     p_init.add_argument("--ui-spec", required=True, help="Path to ui_spec.md")
-    p_init.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_init.add_argument("--repo-root", default=None, help="Repo root (default: .)")
 
     p_new = sub.add_parser("new-change", help="(Product repo) Create a new OpenSpec change folder")
     p_new.add_argument(
@@ -265,17 +257,17 @@ def main(argv=None) -> int:
         action="store_true",
         help="Create an empty change folder (metadata only). Recommended when using OpenSpec OPSX to generate artifacts.",
     )
-    p_new.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_new.add_argument("--repo-root", default=None, help="Repo root (default: .)")
 
     p_status = sub.add_parser("status", help="(Product repo) Show artifact status for a change (BLOCKED/READY/DONE)")
     p_status.add_argument("--id", required=True, help="Change id (folder name)")
-    p_status.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_status.add_argument("--repo-root", default=None, help="Repo root (default: .)")
 
     p_doctor = sub.add_parser(
         "doctor",
         help="(Product repo) Check repo health + deterministic layout (intern-friendly)",
     )
-    p_doctor.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_doctor.add_argument("--repo-root", default=None, help="Repo root (default: .)")
     p_doctor.add_argument(
         "--strict",
         action="store_true",
@@ -297,26 +289,26 @@ def main(argv=None) -> int:
     p_standards_search = standards_sub.add_parser("search", help="Search standard chapters and clauses")
     p_standards_search.add_argument("--query", required=True, help="Search text, for example: closure")
     p_standards_search.add_argument("--standard-root", default=None, help="Optional path to das-standard")
-    p_standards_search.add_argument("--repo-root", default=".", help="Repo root used to resolve workspace siblings")
+    p_standards_search.add_argument("--repo-root", default=None, help="Repo root used to resolve workspace siblings")
     p_standards_search.add_argument("--json", action="store_true")
 
     p_standards_show = standards_sub.add_parser("show", help="Show one clause from clause_index.json")
     p_standards_show.add_argument("--clause", required=True, help="Clause id, for example: cl-2.5")
     p_standards_show.add_argument("--standard-root", default=None, help="Optional path to das-standard")
-    p_standards_show.add_argument("--repo-root", default=".", help="Repo root used to resolve workspace siblings")
+    p_standards_show.add_argument("--repo-root", default=None, help="Repo root used to resolve workspace siblings")
     p_standards_show.add_argument("--json", action="store_true")
 
     p_standards_pack = standards_sub.add_parser("pack", help="Build a role-oriented reading pack")
     p_standards_pack.add_argument("--for", dest="role", required=True, help="Role, for example: backend")
     p_standards_pack.add_argument("--standard-root", default=None, help="Optional path to das-standard")
-    p_standards_pack.add_argument("--repo-root", default=".", help="Repo root used to resolve workspace siblings")
+    p_standards_pack.add_argument("--repo-root", default=None, help="Repo root used to resolve workspace siblings")
     p_standards_pack.add_argument("--json", action="store_true")
 
     p_audit = sub.add_parser(
         "audit",
         help="(Product repo) Emit a deterministic audit report for downstream consumers",
     )
-    p_audit.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_audit.add_argument("--repo-root", default=None, help="Repo root (default: .)")
     p_audit.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     p_audit_repo = sub.add_parser("audit-repo", help="Audit a legacy repo before adoption")
@@ -339,12 +331,12 @@ def main(argv=None) -> int:
         "template-audit",
         help="(Factory repo) Audit template integrity, structured artifacts, and GUI/CLI parity",
     )
-    p_template_audit.add_argument("--repo-root", default=".", help="Factory repo root (default: .)")
+    p_template_audit.add_argument("--repo-root", default=None, help="Factory repo root (default: .)")
     p_template_audit.add_argument("--json", action="store_true", help="Machine-readable JSON output")
 
     p_list = sub.add_parser("list-tasks", help="(Product repo) List tasks for a change (with lock info)")
     p_list.add_argument("--change-id", required=True, help="Change id (folder name)")
-    p_list.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_list.add_argument("--repo-root", default=None, help="Repo root (default: .)")
     p_list.add_argument("--json", action="store_true", help="Machine-readable JSON output")
     p_list.add_argument("--owner", default=None, help="Filter by owner")
     p_list.add_argument("--status", default=None, help="Filter by status")
@@ -361,7 +353,7 @@ def main(argv=None) -> int:
     p_claim.add_argument("--force", action="store_true", help="Overwrite an existing lock (DANGEROUS)")
     p_claim.add_argument("--json", action="store_true", help="Machine-readable JSON output (no next-step hints)")
     p_claim.add_argument("--no-hints", action="store_true", help="Do not print next-step hints")
-    p_claim.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_claim.add_argument("--repo-root", default=None, help="Repo root (default: .)")
 
     p_claim_ready = sub.add_parser(
         "claim-ready",
@@ -380,7 +372,7 @@ def main(argv=None) -> int:
         help="Allow claiming tasks that already have an explicit owner in tasks.md",
     )
     p_claim_ready.add_argument("--json", action="store_true", help="Machine-readable JSON output")
-    p_claim_ready.add_argument("--repo-root", default=".", help="Repo root (default: .)")
+    p_claim_ready.add_argument("--repo-root", default=None, help="Repo root (default: .)")
 
     p_complete = sub.add_parser("complete-task", help="(Product repo) Mark a task as DONE (updates tasks.md + lock)")
     p_complete.add_argument("--change-id", required=True)
@@ -390,7 +382,7 @@ def main(argv=None) -> int:
     p_complete.add_argument("--record-only", action="store_true", help="Record historical completion without running a gate; requires --reason")
     p_complete.add_argument("--reason", default="")
     p_complete.add_argument("--json", action="store_true")
-    p_complete.add_argument("--repo-root", default=".")
+    p_complete.add_argument("--repo-root", default=None)
 
     p_release = sub.add_parser("release-task", help="(Product repo) Release a claimed task (remove lock, set status)")
     p_release.add_argument("--change-id", required=True)
@@ -400,7 +392,7 @@ def main(argv=None) -> int:
     p_release.add_argument("--clear-owner", action="store_true", help="Also clear Owner in tasks.md (sets '-')")
     p_release.add_argument("--force", action="store_true")
     p_release.add_argument("--json", action="store_true")
-    p_release.add_argument("--repo-root", default=".")
+    p_release.add_argument("--repo-root", default=None)
 
     p_lock = sub.add_parser(
         "lock-status",
@@ -411,7 +403,7 @@ def main(argv=None) -> int:
     p_lock.add_argument("--expect-owner", default=None)
     p_lock.add_argument("--require-active", action="store_true", help="Require a fresh IN_PROGRESS lock and --expect-owner")
     p_lock.add_argument("--json", action="store_true")
-    p_lock.add_argument("--repo-root", default=".")
+    p_lock.add_argument("--repo-root", default=None)
 
     p_start = sub.add_parser(
         "start-task",
@@ -430,7 +422,7 @@ def main(argv=None) -> int:
     p_start.add_argument("--no-worktree", action="store_true", help="Do not create a worktree (checkout branch in-place)")
     p_start.add_argument("--force", action="store_true", help="Dangerous overrides (reassign/overwrite locks)")
     p_start.add_argument("--json", action="store_true")
-    p_start.add_argument("--repo-root", default=".")
+    p_start.add_argument("--repo-root", default=None)
 
     p_prompt = sub.add_parser(
         "prompt",
@@ -449,7 +441,7 @@ def main(argv=None) -> int:
         default=None,
         help="Owner/worker id (for worker prompt). Default: $DASOPS_OWNER, else git user.name, else OS user",
     )
-    p_prompt.add_argument("--repo-root", default=".")
+    p_prompt.add_argument("--repo-root", default=None)
 
     p_renew = sub.add_parser(
         "renew-lock",
@@ -460,7 +452,7 @@ def main(argv=None) -> int:
     p_renew.add_argument("--owner", required=True)
     p_renew.add_argument("--lock-token", required=True, help="Lock token from the lock file")
     p_renew.add_argument("--json", action="store_true")
-    p_renew.add_argument("--repo-root", default=".")
+    p_renew.add_argument("--repo-root", default=None)
 
     p_reclaim = sub.add_parser(
         "reclaim-lock",
@@ -472,7 +464,7 @@ def main(argv=None) -> int:
     p_reclaim.add_argument("--reason", required=True, help="Reason for reclaim (audit trail)")
     p_reclaim.add_argument("--force", action="store_true", help="Reclaim even if lock is not stale")
     p_reclaim.add_argument("--json", action="store_true")
-    p_reclaim.add_argument("--repo-root", default=".")
+    p_reclaim.add_argument("--repo-root", default=None)
 
     p_check_stale = sub.add_parser(
         "check-stale",
@@ -481,7 +473,7 @@ def main(argv=None) -> int:
     p_check_stale.add_argument("--change-id", required=True)
     p_check_stale.add_argument("--task-id", required=True)
     p_check_stale.add_argument("--json", action="store_true")
-    p_check_stale.add_argument("--repo-root", default=".")
+    p_check_stale.add_argument("--repo-root", default=None)
 
     add_protected_parsers(sub)
     add_bootstrap_parsers(sub)
@@ -516,17 +508,20 @@ def main(argv=None) -> int:
                 "Fix: choose a different --dest (recommended), or pass --allow-inside-factory (not recommended)."
             )
 
-        create_product_repo(
-            factory_root=factory_root,
-            dest_dir=dest,
-            master_doc_path=Path(args.master_doc).expanduser().resolve(),
-            ui_spec_path=Path(args.ui_spec).expanduser().resolve(),
-            change_id=args.change_id,
-            intent=args.intent,
-            init_git=not args.no_git,
-            overwrite=args.overwrite,
-            change_empty=args.change_empty,
-        )
+        try:
+            create_product_repo(
+                factory_root=factory_root,
+                dest_dir=dest,
+                master_doc_path=Path(args.master_doc).expanduser().resolve(),
+                ui_spec_path=Path(args.ui_spec).expanduser().resolve(),
+                change_id=args.change_id,
+                intent=args.intent,
+                init_git=not args.no_git,
+                overwrite=args.overwrite,
+                change_empty=args.change_empty,
+            )
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
         print(f"Created product repo: {dest}")
         return 0
 
@@ -535,8 +530,11 @@ def main(argv=None) -> int:
         return governed_result
 
     # From here down: product repo commands
-    raw_repo_root = Path(getattr(args, "repo_root", ".")).expanduser().resolve()
-    repo_root = _resolve_repo_root(raw_repo_root)
+    explicit_root = getattr(args, "repo_root", None)
+    raw_repo_root = Path(explicit_root or ".").expanduser().resolve()
+    if not raw_repo_root.is_dir():
+        raise SystemExit(f"Repo root must be an existing directory: {raw_repo_root}")
+    repo_root = raw_repo_root if explicit_root is not None else _resolve_repo_root(raw_repo_root)
 
     protected_result = handle_protected(args)
     if protected_result is not None:
@@ -636,7 +634,7 @@ def main(argv=None) -> int:
             except (OSError, ValueError) as exc:
                 raise SystemExit("Bundle preview failed; no approved governance result was produced") from exc
             return 0
-        standards_root = _resolve_repo_root(Path(getattr(args, "repo_root", ".")).expanduser().resolve())
+        standards_root = repo_root
         if args.standards_cmd == "search":
             payload = search_indexes(
                 standards_root,
@@ -934,8 +932,8 @@ def main(argv=None) -> int:
         # Next-step coaching
         if not args.no_hints:
             if _is_git_repo(repo_root):
-                add_cmd = f"git add {rel_tasks} {rel_lock}"
-                commit_cmd = f'git commit -m "chore: claim {args.task_id}"'
+                add_cmd = shlex.join(["git", "add", "--", rel_tasks, rel_lock])
+                commit_cmd = shlex.join(["git", "commit", "-m", f"chore: claim {args.task_id}"])
                 print("\nNext steps (recommended):")
                 print(f"  {add_cmd} && {commit_cmd}")
                 if current_branch:
@@ -948,7 +946,7 @@ def main(argv=None) -> int:
                 if current_branch in {"main", "master"}:
                     print("\nNote:")
                     print(f"- You are currently on '{current_branch}'. Workers should implement tasks on a feature branch.")
-                    print(f"  Suggested: git checkout -b {suggested_branch} {current_branch}")
+                    print("  Suggested: " + shlex.join(["git", "checkout", "-b", suggested_branch, current_branch]))
                 elif expected_branch and not _is_placeholder(expected_branch) and current_branch and current_branch != expected_branch:
                     print("\nNote:")
                     print(f"- Current branch is '{current_branch}', but tasks.md suggests '{expected_branch}'.")
@@ -956,7 +954,7 @@ def main(argv=None) -> int:
 
                 print("\nWorker loop (copy/paste):")
                 print(
-                    f"  ./scripts/run_worker_codex.sh {args.change_id} {args.task_id} {owner_from_tasks}"
+                    "  " + shlex.join(["./scripts/run_worker_codex.sh", args.change_id, args.task_id, owner_from_tasks])
                 )
             else:
                 print("\nNext steps:")
@@ -1030,15 +1028,23 @@ def main(argv=None) -> int:
     # -----------------------------------------------------------------
     if args.cmd == "complete-task":
         owner = _normalize_owner(args.owner) if args.owner else _default_owner(repo_root)
-        lock_path = complete_task(
-            repo_root=repo_root,
-            change_id=args.change_id,
-            task_id=args.task_id,
-            owner=owner,
-            force=args.force,
-            record_only=args.record_only,
-            reason=args.reason,
-        )
+        try:
+            lock_path = complete_task(
+                repo_root=repo_root,
+                change_id=args.change_id,
+                task_id=args.task_id,
+                owner=owner,
+                force=args.force,
+                record_only=args.record_only,
+                reason=args.reason,
+            )
+        except VerificationFailure as exc:
+            if args.json:
+                print(json.dumps(exc.details, ensure_ascii=False))
+            else:
+                print(str(exc), file=sys.stderr)
+            return 1
+
 
         payload = {
             "ok": True,
@@ -1060,8 +1066,8 @@ def main(argv=None) -> int:
         print(f"- Lock:   {_fmt_rel(repo_root, lock_path)}")
         print("\nNext steps (recommended):")
         print("  ./scripts/verify")
-        print(f"  git add openspec/changes/{args.change_id}/tasks.md openspec/changes/{args.change_id}/task_locks/{args.task_id}.lock")
-        print(f"  git commit -m \"chore: complete {args.task_id}\"")
+        print("  " + shlex.join(["git", "add", "--", f"openspec/changes/{args.change_id}/tasks.md", f"openspec/changes/{args.change_id}/task_locks/{args.task_id}.lock"]))
+        print("  " + shlex.join(["git", "commit", "-m", f"chore: complete {args.task_id}"]))
         print("  git push -u origin HEAD")
 
         return 0
@@ -1098,8 +1104,8 @@ def main(argv=None) -> int:
         print(f"- Status set to:   {args.status}")
         print(f"- Removed lock:    {_fmt_rel(repo_root, lock_path)}")
         print("\nNext steps (recommended):")
-        print(f"  git add openspec/changes/{args.change_id}/tasks.md")
-        print(f"  git commit -m \"chore: release {args.task_id}\"")
+        print("  " + shlex.join(["git", "add", "--", f"openspec/changes/{args.change_id}/tasks.md"]))
+        print("  " + shlex.join(["git", "commit", "-m", f"chore: release {args.task_id}"]))
         print("  git push -u origin HEAD")
 
         return 0
@@ -1162,6 +1168,25 @@ def main(argv=None) -> int:
             "noWorktree": bool(args.no_worktree),
         }
 
+        # Reject predictable task/Git failures before changing the checkout.
+        preflight_claim(repo_root=repo_root, change_id=args.change_id, task_id=args.task_id, owner=owner, force=args.force)
+        original_branch = _git_current_branch(repo_root)
+        rc, original_head = _run(["git", "rev-parse", "HEAD"], cwd=repo_root)
+        if rc or not original_branch:
+            raise SystemExit("Cannot identify the original checkout")
+        if branch.startswith("-") or _run(["git", "check-ref-format", "--branch", branch], cwd=repo_root)[0]:
+            raise SystemExit("Invalid branch name")
+        if _run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=repo_root)[0] == 0:
+            raise SystemExit(f"Branch already exists: {branch}")
+        if base.startswith("-"):
+            raise SystemExit("Invalid base ref")
+        rc, base_head = _run(["git", "rev-parse", "--verify", f"{base}^{{commit}}"], cwd=repo_root)
+        if rc:
+            raise SystemExit(f"Invalid base ref: {base}")
+        change_path = f"openspec/changes/{args.change_id}"
+        if _run(["git", "diff", "--quiet", "HEAD", base_head, "--", change_path], cwd=repo_root)[0]:
+            raise SystemExit("Task state differs on the requested base; check out that base and review the task before start-task")
+
         # Create branch/worktree
         if args.no_worktree:
             rc, out = _run(["git", "checkout", "-b", branch, base], cwd=repo_root)
@@ -1176,14 +1201,36 @@ def main(argv=None) -> int:
                 raise SystemExit(f"Failed to create worktree: {out}")
 
         # Claim the task inside the worktree (so claim artifacts are committed on that branch)
-        lock_path = claim_task(
-            repo_root=worktree_dir,
-            change_id=args.change_id,
-            task_id=args.task_id,
-            owner=owner,
-            status="IN_PROGRESS",
-            force=args.force,
-        )
+        try:
+            lock_path = claim_task(
+                repo_root=worktree_dir,
+                change_id=args.change_id,
+                task_id=args.task_id,
+                owner=owner,
+                status="IN_PROGRESS",
+                force=args.force,
+            )
+        except (SystemExit, OSError, ValueError) as exc:
+            pending = worktree_dir / change_path / ".dasops-local/pending.json"
+            same_head = _run(["git", "rev-parse", "HEAD"], cwd=worktree_dir) == (0, base_head)
+            safe = not os.path.lexists(pending) and same_head and _git_worktree_clean(worktree_dir)
+            restored = False
+            if safe and args.no_worktree:
+                target = original_head if original_branch == "HEAD" else original_branch
+                restored = _run(["git", "checkout", target], cwd=repo_root)[0] == 0
+            elif safe:
+                # Do not delete ignored user files either; only our mutex is disposable.
+                rc, extras = _run(["git", "ls-files", "--others", "--ignored", "--exclude-standard"], cwd=worktree_dir)
+                allowed = f"{change_path}/.dasops-local/coordination.guard"
+                if rc == 0 and all(path == allowed for path in extras.splitlines()):
+                    restored = _run(["git", "worktree", "remove", str(worktree_dir)], cwd=repo_root)[0] == 0
+            branch_removed = restored and _run(["git", "rev-parse", f"refs/heads/{branch}"], cwd=repo_root) == (0, base_head) and _run(["git", "branch", "-D", branch], cwd=repo_root)[0] == 0
+            payload.update(error=str(exc), originalBranch=original_branch, originalHead=original_head,
+                           recoveryRequired=os.path.lexists(pending), checkoutRestored=restored,
+                           branchRemoved=bool(branch_removed), retainedWorktree=None if restored else str(worktree_dir))
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+            return 1
+
 
         # Compose output
         rel_tasks = f"openspec/changes/{args.change_id}/tasks.md"
@@ -1210,13 +1257,13 @@ def main(argv=None) -> int:
 
         print("\nNext steps (copy/paste):")
         if not args.no_worktree:
-            print(f"  cd {worktree_dir}")
+            print(f"  cd {shlex.quote(str(worktree_dir))}")
         print("  ./scripts/verify")
-        print(f"  git add {rel_tasks} {rel_lock}")
-        print(f"  git commit -m \"chore: claim {args.task_id}\"")
+        print("  " + shlex.join(["git", "add", "--", rel_tasks, rel_lock]))
+        print("  " + shlex.join(["git", "commit", "-m", f"chore: claim {args.task_id}"]))
         print("  git push -u origin HEAD")
         print("\nThen: run the Worker loop in this worktree:")
-        print(f"  ./scripts/run_worker_codex.sh {args.change_id} {args.task_id} {owner}")
+        print("  " + shlex.join(["./scripts/run_worker_codex.sh", args.change_id, args.task_id, owner]))
         print("\nSee docs/USER_MANUAL.md for the full workflow.")
 
         return 0
@@ -1256,11 +1303,11 @@ def main(argv=None) -> int:
             repo_root=repo_root,
             change_id=args.change_id,
             task_id=args.task_id,
-            owner=args.owner,
+            owner=_normalize_owner(args.owner),
             lock_token=args.lock_token,
         )
         if getattr(args, "json", False):
-            print(json.dumps({"renewed": True, "lockPath": str(lp)}))
+            print(json.dumps({"renewed": True, "owner": _normalize_owner(args.owner), "lockPath": str(lp)}))
         else:
             print(f"Lock renewed: {lp}")
         return 0
@@ -1275,7 +1322,7 @@ def main(argv=None) -> int:
             repo_root=repo_root,
             change_id=args.change_id,
             task_id=args.task_id,
-            new_owner=args.new_owner,
+            new_owner=_normalize_owner(args.new_owner),
             reason=args.reason,
             force=args.force,
         )
@@ -1302,6 +1349,9 @@ def main(argv=None) -> int:
     # check-stale
     # -----------------------------------------------------------------
     if args.cmd == "check-stale":
+        from .identities import validate_id
+        validate_id("change_id", args.change_id)
+        validate_id("task_id", args.task_id)
         change_dir = repo_root / "openspec" / "changes" / args.change_id
         lp = lock_path_for(change_dir, args.task_id)
         lock = read_lock(lp)

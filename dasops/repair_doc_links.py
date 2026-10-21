@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 # (regex, replacement) pairs applied to link targets only.
 DEFAULT_REWRITES: list[tuple[re.Pattern, str]] = [
@@ -66,11 +67,29 @@ def repair_tree(
     if not root.is_dir():
         return report
     for md in sorted(root.rglob("*.md")):
+        if not md.is_file() or md.is_symlink():
+            continue
         try:
             text = md.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        new_text, edits = repair_text(text, rewrites)
+        edits = []
+        def repair_link(match):
+            original = match.group(0)
+            replacement, proposed = repair_text(original, rewrites)
+            if not proposed:
+                return original
+            old = urlsplit(proposed[0]["from"])
+            new = urlsplit(proposed[0]["to"])
+            if old.scheme or new.scheme or not new.path:
+                return original
+            # Preserve valid historical references. Never replace a missing
+            # target with another missing target merely because its name matches.
+            if (md.parent / unquote(old.path)).exists() or not (md.parent / unquote(new.path)).is_file():
+                return original
+            edits.extend(proposed)
+            return replacement
+        new_text = LINK_RE.sub(repair_link, text)
         if edits:
             report.edits += len(edits)
             report.files_changed.append(str(md.relative_to(root)))

@@ -110,6 +110,15 @@ def closed_object(value, required, optional=()):
 
 
 def _jcs_value(value):
+    if type(value) is int and abs(value) > MAX_SAFE_INTEGER:
+        import rfc8785
+        try:
+            number = float(value)
+        except OverflowError as exc:
+            raise ExactJsonError("number outside IEEE 754 domain") from exc
+        if not math.isfinite(number) or (number != value and rfc8785.dumps(number).decode() != str(value)):
+            raise ExactJsonError("integer would lose precision")
+        return number
     if isinstance(value, Decimal):
         # Security fields are checked in their exact Decimal domain before this
         # explicit IEEE 754 conversion. Generic JCS numbers follow RFC 8785.

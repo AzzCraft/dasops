@@ -28,7 +28,7 @@ def build_install_cadence_command(
         raise ValueError("Provide --from-suite, --git-base or --org explicitly")
     cmd = ["bash", "./scripts/install_cadence_vendor.sh", "--tier", tier]
     if from_suite:
-        cmd.extend(["--from-suite", from_suite])
+        cmd.extend(["--from-suite", str(suite)])
     if git_base:
         cmd.extend(["--git-base", git_base])
     if org:

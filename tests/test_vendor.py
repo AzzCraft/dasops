@@ -46,3 +46,32 @@ class TestVendorLock(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_vendor_failures_preserve_previous_and_relative_source(tmp_path, monkeypatch):
+    import shutil
+    import subprocess
+    from dasops.vendor import build_install_cadence_command
+    source = Path(__file__).resolve().parents[1] / 'templates/das-product/scripts/install_cadence_vendor.sh'
+    product = tmp_path / 'product'; (product / 'scripts').mkdir(parents=True)
+    installer = product / 'scripts/install_cadence_vendor.sh'
+    shutil.copyfile(source, installer)
+    def run(*args):
+        return subprocess.run(['bash', str(installer), *args], cwd=product, capture_output=True, text=True)
+    assert run().returncode != 0
+    assert not (product / 'vendor/cadence').exists()
+    old = product / 'vendor/cadence/cadence-oss'; old.mkdir(parents=True)
+    (old / 'sentinel').write_bytes(b'old')
+    assert run('--force', '--from-suite', str(tmp_path / 'missing')).returncode != 0
+    assert (old / 'sentinel').read_bytes() == b'old'
+    release = tmp_path / 'release'; (release / 'das-suite').mkdir(parents=True)
+    (release / 'cadence-oss').mkdir()
+    (release / 'cadence-oss/source').write_bytes(b'new')
+    monkeypatch.chdir(tmp_path)
+    cmd = build_install_cadence_command(tier='oss', from_suite='release/das-suite', force=True)
+    assert Path(cmd[cmd.index('--from-suite') + 1]).is_absolute()
+    proc = subprocess.run(cmd, cwd=product, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert (old / 'source').read_bytes() == b'new'
+    assert not (old / 'sentinel').exists()
+    assert not list((product / 'vendor').glob('.cadence-install.*'))

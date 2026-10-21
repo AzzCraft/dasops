@@ -88,7 +88,7 @@ def prepare_route(
                 raise ProtectedRouteError(f"route target is absent: {target['taskId']}")
             if row.status != "BLOCKED" or not is_unassigned_owner(row.owner):
                 raise ProtectedRouteError(f"route target is not unassigned BLOCKED: {row.task_id}")
-            expected_sources.update(split_deps(row.depends_on))
+            expected_sources.update(split_deps(row.depends_on, by_id))
         if set(source_ids) != expected_sources:
             raise ProtectedRouteError("sourceResults are not the exact dependency denominator")
         for source_id in source_ids:

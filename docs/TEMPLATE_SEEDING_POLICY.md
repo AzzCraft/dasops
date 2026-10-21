@@ -13,9 +13,9 @@ Every seeded repo MUST contain:
 | File | Source | Mutable After Seed |
 |------|--------|-------------------|
 | `cadence.yaml` | Generated from template + user inputs | Yes |
-| `tooling_lock.json` | Copied from template | Yes (via upgrade) |
+| `tooling_lock.json` | Copied from template | Yes (reviewed manual pin update) |
 | `local_extension_manifest.json` | Copied from template | Yes |
-| `STANDARD_REF.md` | Generated with current standard version | No (update via `dasops upgrade-standard`) |
+| `STANDARD_REF.md` | Copied with the template's declared Standard baseline | Yes (reviewed Standard reference update) |
 | `scripts/verify` | Copied from template | Yes (with constraints) |
 | `README.md` | Generated from template | Yes |
 | `VERSION` | Set to `0.1.0` | Yes |
@@ -35,8 +35,13 @@ The template MUST NOT seed:
 When the template changes:
 
 1. Existing repos are NOT auto-updated.
-2. `dasops upgrade-standard` handles standard version bumps.
-3. `dasops doctor` detects template drift.
+2. There is no automatic Standard upgrade command. Review the new Standard,
+   update `STANDARD_REF.md` and the corresponding version/pin fields in
+   `tooling_lock.json` and any project closure/lock files together, preserve local
+   document content, then run the product's existing verification entry point.
+   Keep the source changes reviewable and record the selected Standard version.
+3. `dasops doctor` checks required structure, lock/schema constraints and task state.
+   It does not prove byte-for-byte template freshness or authorize an upgrade.
 4. Manual re-seeding is never required for existing repos.
 
 ## Verification

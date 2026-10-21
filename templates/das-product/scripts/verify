@@ -18,6 +18,9 @@ from contextlib import ExitStack
 import os
 import re
 import subprocess
+import stat
+from jsonschema import Draft202012Validator
+from referencing import Registry
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,6 +28,8 @@ import yaml
 
 
 REPO_ROOT = Path(os.environ["REPO_ROOT"]).resolve()
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from task_markdown import table_rows, task_files
 REQUIRED_FILES = [
     REPO_ROOT / "docs" / "master_doc.md",
     REPO_ROOT / "docs" / "ui_spec.md",
@@ -100,6 +105,14 @@ def check_seed_contract() -> int:
         return fail("cadence.yaml must pin core-v146-baseline")
 
     config_text = (REPO_ROOT / "openspec" / "config.yaml").read_text(encoding="utf-8", errors="replace")
+    for name, text in (("cadence.yaml", cadence_yaml), ("openspec/config.yaml", config_text),
+                       ("openspec/schemas/das-standard/schema.yaml", (REPO_ROOT / "openspec/schemas/das-standard/schema.yaml").read_text())):
+        try:
+            parsed = yaml.safe_load(text)
+            if not isinstance(parsed, dict):
+                return fail(f"{name} must be a YAML object")
+        except yaml.YAMLError as exc:
+            return fail(f"{name} is invalid YAML: {exc}")
     if "STANDARD_REF.md" not in config_text:
         return fail("openspec/config.yaml must reference STANDARD_REF.md")
 
@@ -130,7 +143,7 @@ def check_master_doc_minimum() -> int:
 
 def check_deterministic_layout() -> int:
     stray_tasks = []
-    for path in REPO_ROOT.rglob("tasks.md"):
+    for path in task_files(REPO_ROOT):
         rel = path.relative_to(REPO_ROOT)
         if rel.parts[:2] == ("openspec", "schemas"):
             continue
@@ -178,6 +191,21 @@ def unique_lock_mapping(loader, node):
 UniqueLockLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_lock_mapping)
 
 
+def read_state_text(path):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_size > 16 * 1024 * 1024:
+        raise ValueError(f"invalid_state_file: {path.relative_to(REPO_ROOT)}")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+            raise ValueError(f"invalid_state_file: {path.relative_to(REPO_ROOT)}")
+        data = stream.read(16 * 1024 * 1024 + 1)
+    if len(data) > 16 * 1024 * 1024:
+        raise ValueError("state_size_limit")
+    return data.decode("utf-8")
+
+
 def check_task_lock_schema() -> int:
     changes_dir = REPO_ROOT / "openspec" / "changes"
     if not changes_dir.exists():
@@ -186,7 +214,7 @@ def check_task_lock_schema() -> int:
         if not (lock_path.parent.parent / "tasks.md").is_file():
             return fail(f"Task lock has no task index: {lock_path.relative_to(REPO_ROOT)}")
         try:
-            data = yaml.load(lock_path.read_text(encoding="utf-8"), Loader=UniqueLockLoader)
+            data = yaml.load(read_state_text(lock_path), Loader=UniqueLockLoader)
         except (ValueError, TypeError, yaml.YAMLError) as exc:
             return fail(f"Invalid task lock: {lock_path.relative_to(REPO_ROOT)} ({type(exc).__name__})")
         if not isinstance(data, dict):
@@ -211,23 +239,16 @@ def check_tasks_index_contract() -> int:
     if not changes_dir.exists():
         return 0
     for tasks_md in sorted(changes_dir.glob("*/tasks.md")):
-        lines = tasks_md.read_text(encoding="utf-8", errors="replace").splitlines()
-        if TASK_INDEX_HEADER not in lines:
-            return fail(
-                f"tasks.md missing canonical index header in {tasks_md.relative_to(REPO_ROOT)}"
-            )
-        header_idx = lines.index(TASK_INDEX_HEADER)
+        lines = read_state_text(tasks_md).splitlines()
+        try:
+            rows = table_rows(lines)
+        except ValueError as exc:
+            return fail(f"Invalid task table {tasks_md.relative_to(REPO_ROOT)}: {exc}")
+        if not rows:
+            return fail(f"tasks.md missing canonical index rows: {tasks_md.relative_to(REPO_ROOT)}")
         tasks = {}
-        for raw in lines[header_idx + 2 :]:
-            stripped = raw.strip()
-            if not stripped.startswith("|"):
-                break
-            if re.match(r"^\|\s*-{3,}", stripped):
-                continue
-            parts = [part.strip() for part in stripped.strip("|").split("|")]
-            while len(parts) < 6:
-                parts.append("")
-            task_id, _title, owner, status, _depends_on, verify_gate = parts[:6]
+        for _, parts in rows:
+            task_id, _title, owner, status, _depends_on, verify_gate = parts
             if not task_id:
                 continue
             if task_id in tasks:
@@ -237,7 +258,7 @@ def check_tasks_index_contract() -> int:
                 return fail(
                     f"tasks.md row {task_id} has invalid status {status!r} in {tasks_md.relative_to(REPO_ROOT)}"
                 )
-            if "verify" not in verify_gate:
+            if not verify_gate.strip(" `") or verify_gate.strip(" `") == "-":
                 return fail(
                     f"tasks.md row {task_id} missing verify gate command in {tasks_md.relative_to(REPO_ROOT)}"
                 )
@@ -246,7 +267,7 @@ def check_tasks_index_contract() -> int:
             return fail("Invalid task lock directory")
         locked = set()
         for lock_path in sorted(lock_dir.glob("*.lock")):
-            data = yaml.load(lock_path.read_text(encoding="utf-8"), Loader=UniqueLockLoader)
+            data = yaml.load(read_state_text(lock_path), Loader=UniqueLockLoader)
             task_id = data["taskId"]
             if tasks.get(task_id) != (data["owner"], data["status"]):
                 return fail(f"Inconsistent task state: {lock_path.relative_to(REPO_ROOT)}")
@@ -264,7 +285,7 @@ def check_stale_lock_semantics() -> int:
         return 0
     now = datetime.now(timezone.utc)
     for lock_path in sorted(changes_dir.rglob("*.lock")):
-        data = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(read_state_text(lock_path))
         if not isinstance(data, dict):
             return fail(f"Lock is not a YAML object: {lock_path.relative_to(REPO_ROOT)}")
 
@@ -310,6 +331,12 @@ def check_tooling_lock_schema() -> int:
         return fail(f"tooling_lock.json is not valid JSON: {exc}")
     if not isinstance(data, dict):
         return fail("tooling_lock.json root must be an object")
+    try:
+        schema = json.loads((REPO_ROOT / "openspec/schemas/das-standard/tooling_lock.schema.json").read_text())
+        Draft202012Validator.check_schema(schema)
+        Draft202012Validator(schema, registry=Registry()).validate(data)
+    except Exception as exc:
+        return fail(f"tooling_lock.json schema validation failed: {exc}")
     missing = sorted(TOOLING_LOCK_REQUIRED_KEYS - set(data))
     if missing:
         return fail(f"tooling_lock.json missing required keys: {missing}")
@@ -404,7 +431,18 @@ def main() -> int:
     args = parser.parse_args()
     # Same stable guard inode as DASOps writers; no read-side recovery.
     with ExitStack() as stack:
-        for tasks in sorted((REPO_ROOT / "openspec/changes").glob("*/tasks.md")):
+        changes = REPO_ROOT / "openspec/changes"
+        if changes.is_symlink():
+            return fail("invalid task changes directory")
+        for change in sorted(changes.iterdir()):
+            if change.is_symlink():
+                return fail(f"invalid task change directory: {change.name}")
+            if not change.is_dir():
+                continue
+            locks = change / "task_locks"
+            if locks.is_symlink() or (locks.exists() and not locks.is_dir()):
+                return fail(f"invalid task lock directory: {change.name}")
+        for tasks in sorted(changes.glob("*/tasks.md")):
             if fcntl is None:
                 return fail("unsupported task coordination platform")
             meta = tasks.parent / ".dasops-local"
@@ -427,5 +465,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise SystemExit(fail(str(exc)))
 PY

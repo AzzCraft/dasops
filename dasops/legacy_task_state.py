@@ -37,7 +37,8 @@ def read_bytes(path: Path) -> bytes | None:
         raise StateError("invalid_state_file")
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+        opened = os.fstat(stream.fileno())
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
             raise StateError("invalid_state_file")
         data = stream.read(MAX_STATE_BYTES + 1)
     if len(data) > MAX_STATE_BYTES:
