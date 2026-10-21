@@ -218,7 +218,7 @@ def _finish_claim(repo, store, worker_lock, intent, receipt):
     text = repo.read_path(intent["baseCommit"], tasks_path).decode("utf-8", "strict")
     rows = parse_tasks_index(text); by_id = index_rows_by_id(rows)
     selected = next((r for r in rows if r.status == "TODO" and is_unassigned_owner(r.owner)
-                     and all(d in by_id and by_id[d].status == "DONE" for d in split_deps(r.depends_on))), None)
+                     and all(d in by_id and by_id[d].status == "DONE" for d in split_deps(r.depends_on, by_id))), None)
     if selected is None or selected.task_id != intent["taskId"]:
         raise ProtectedClaimError("original claim Task was not dependency-ready")
     content, changed = update_tasks_md_text(text, intent["taskId"], intent["owner"], "IN_PROGRESS")
@@ -368,7 +368,7 @@ def claim_ready(
         for row in rows:
             if row.status != "TODO" or not is_unassigned_owner(row.owner):
                 continue
-            dependencies = split_deps(row.depends_on)
+            dependencies = split_deps(row.depends_on, by_id)
             if all(dep in by_id and by_id[dep].status == "DONE" for dep in dependencies):
                 selected = row
                 break

@@ -4,6 +4,7 @@ import os
 import uuid
 import re
 import shlex
+from .identities import validate_id, normalize_owner
 import subprocess
 from . import legacy_task_state as state
 from dataclasses import dataclass, field, replace
@@ -28,14 +29,15 @@ DEFAULT_LEASE_SECONDS = 3600
 
 
 def _validate_id(name: str, value: str) -> None:
-    """Reject ids containing path separators or parent-directory escapes."""
-    if not value or value in {".", ".."} or any(ord(c) < 32 for c in value) or "/" in value or "\\" in value:
-        raise SystemExit(f"Invalid {name}: {value!r} (must not contain path separators or '..')")
+    try:
+        validate_id(name, value)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def _validate_owner(owner: str) -> None:
     if (not isinstance(owner, str) or not owner or owner != owner.strip()
-            or is_unassigned_owner(owner) or "|" in owner
+            or normalize_owner(owner) != owner or is_unassigned_owner(owner) or "|" in owner
             or any(ord(c) < 32 or ord(c) == 127 for c in owner)):
         raise state.StateError("invalid_owner")
 
@@ -209,21 +211,33 @@ def inspect_lock(*, repo_root: Path, change_id: str, task_id: str, expect_owner:
     return payload
 
 
-def _claim(change: Path, text: str, rows: dict, locks: dict, task_id: str, owner: str, force: bool):
+def _claim_preconditions(rows: dict, locks: dict, task_id: str, owner: str, force: bool):
     _validate_owner(owner)
     row = rows.get(task_id)
-    if row is None or not owner.strip():
+    if row is None:
         raise state.StateError("missing_task_or_owner")
     existing = locks.get(task_id)
     if row.status == "DONE":
         raise state.StateError("completed_task_not_ready")
-    if existing and existing.status == "IN_PROGRESS":
-        if is_stale(existing):
-            raise state.StateError("stale_lock_requires_reclaim")
-        if existing.owner == owner:
-            return lock_path_for(change, task_id), task_hints_from_text(text, change / "tasks.md", task_id)
+    if existing and existing.status == "IN_PROGRESS" and is_stale(existing):
+        raise state.StateError("stale_lock_requires_reclaim")
     if ((row.owner and not is_unassigned_owner(row.owner) and row.owner != owner) or (existing and existing.owner != owner)) and not force:
         raise state.StateError("owner_mismatch")
+    return existing
+
+
+def preflight_claim(*, repo_root: Path, change_id: str, task_id: str, owner: str, force: bool = False):
+    """Read-only check; the actual claim repeats it under its write guard."""
+    change = _change(repo_root, change_id, task_id)
+    with state.guard(change):
+        _, rows, locks = _snapshot(change)
+        _claim_preconditions(rows, locks, task_id, owner, force)
+
+
+def _claim(change: Path, text: str, rows: dict, locks: dict, task_id: str, owner: str, force: bool):
+    existing = _claim_preconditions(rows, locks, task_id, owner, force)
+    if existing and existing.status == "IN_PROGRESS" and existing.owner == owner:
+        return lock_path_for(change, task_id), task_hints_from_text(text, change / "tasks.md", task_id)
     now = _utc_now()
     changed_owner = bool(existing and existing.owner != owner)
     history = list(existing.audit_history) if existing else []
@@ -267,7 +281,7 @@ def claim_ready_task_with_result(*, repo_root: Path, change_id: str, owner: str,
                 continue
             if not is_unassigned_owner(row.owner) and (not allow_preassigned or row.owner != owner):
                 continue
-            if any(dep not in rows or rows[dep].status != "DONE" for dep in split_deps(row.depends_on)):
+            if any(dep not in rows or rows[dep].status != "DONE" for dep in split_deps(row.depends_on, rows)):
                 continue
             return _claim(change, text, rows, locks, row.task_id, owner, False)
     return None
@@ -344,9 +358,22 @@ def _completion_subject(change: Path, task_id: str, owner: str, force: bool):
         raise state.StateError("completion_owner_mismatch")
     if lock and (lock.status != "IN_PROGRESS" or is_stale(lock) or (lock.owner != owner and not force)):
         raise state.StateError("completion_requires_current_lease")
-    if any(dep not in rows or rows[dep].status != "DONE" for dep in split_deps(row.depends_on)):
+    if any(dep not in rows or rows[dep].status != "DONE" for dep in split_deps(row.depends_on, rows)):
         raise state.StateError("completion_dependency_not_done")
     return text, row, lock
+
+
+class VerificationFailure(state.StateError):
+    """Bounded diagnostics for a failed local gate; no completion was written."""
+    def __init__(self, command, exit_code, stdout="", stderr=""):
+        def tail(value):
+            if isinstance(value, bytes):
+                value = value.decode("utf-8", errors="replace")
+            return (value or "")[-8192:]
+        self.details = {"ok": False, "error": "verification_failed", "command": command,
+                        "exitCode": exit_code, "stdout": tail(stdout), "stderr": tail(stderr),
+                        "completionWritten": False, "diagnosticLimitPerStream": 8192}
+        super().__init__(f"verification_failed_exit_{exit_code}: {self.details['stderr'] or self.details['stdout']}")
 
 
 def complete_task(*, repo_root: Path, change_id: str, task_id: str, owner: str, force: bool = False, record_only: bool = False, reason: str = "") -> Path:
@@ -374,10 +401,12 @@ def complete_task(*, repo_root: Path, change_id: str, task_id: str, owner: str, 
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         try:
             result = subprocess.run(argv, cwd=repo_root, env=env, capture_output=True, text=True, timeout=900)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise state.StateError("verification_execution_failed") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise VerificationFailure(command, None, exc.stdout, exc.stderr or "verification timeout") from exc
+        except OSError as exc:
+            raise VerificationFailure(command, None, stderr=str(exc)) from exc
         if result.returncode:
-            raise state.StateError(f"verification_failed_exit_{result.returncode}")
+            raise VerificationFailure(command, result.returncode, result.stdout, result.stderr)
     with state.guard(change, write=True):
         text, current_row, current = _completion_subject(change, task_id, owner, force)
         if (current_row, current.lock_token if current else None) != subject:

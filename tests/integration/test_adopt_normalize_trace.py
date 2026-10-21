@@ -57,6 +57,8 @@ def test_ops_002_adopt_normalize_trace_pipeline_yields_verifiable_repo(tmp_path:
     assert adopted["task"] == "OPS-002"
     assert "scripts/verify" in "\n".join(adopted["repairedArtifacts"])
 
+    (legacy / "standard").mkdir()
+    (legacy / "standard/SPECIFICATION.md").write_text("# Current standard\n")
     normalized = _run_json([sys.executable, "-m", "dasops", "normalize-repo", str(legacy), "--json"])
     assert normalized["task"] == "OPS-002"
     assert normalized["docLinkRepairs"]
@@ -65,11 +67,16 @@ def test_ops_002_adopt_normalize_trace_pipeline_yields_verifiable_repo(tmp_path:
     trace = _run_json([sys.executable, "-m", "dasops", "trace-check", str(legacy), "--json"])
     assert trace["task"] == "OPS-002"
     assert trace["ok"] is True
-    assert {"requirements", "tasks", "verify", "evidence"} <= set(trace["kinds"])
-    assert any(edge["from"] == "requirements" and edge["to"] == "tasks" for edge in trace["relations"])
+    assert trace["scope"] == "layout-and-version-only"
+    assert trace["relations"] == []
 
-    verify = _run(["bash", "scripts/verify"], cwd=legacy)
-    assert verify.returncode == 0
+    verify = _run(["bash", "scripts/verify"], cwd=legacy, ok=(2,))
+    assert "not_configured" in verify.stderr
+    for code in (1, 0):
+        gate = legacy / "scripts/verify"
+        gate.write_text(f"#!/usr/bin/env bash\nexit {code}\n")
+        _run_json([sys.executable, "-m", "dasops", "adopt-repo", str(legacy), "--json"])
+        _run(["bash", "scripts/verify"], cwd=legacy, ok=(code,))
 
 
 def test_ops_002_failure_output_names_missing_artifact_and_command(tmp_path: Path) -> None:

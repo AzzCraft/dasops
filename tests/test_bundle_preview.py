@@ -217,3 +217,14 @@ def test_signed_facts_transport_failures_cannot_become_approved_results(tmp_path
     path, digest = binary(tmp_path, codec.canonical(output).decode(), 'rejected' if fault == 'rejected' else 'normal')
     with pytest.raises((CadenceDependencyError, ValueError)):
         resolve_facts_preview(wire, binary=path, binary_sha256=digest, release_version='1.0.0')
+
+
+@pytest.mark.parametrize("raw", [b"1e16", b"295147905179352830000", b"1.2345", b"1e-7"])
+def test_generic_jcs_reads_its_own_numeric_output(raw):
+    first=codec.canonical(codec.parse(raw))
+    assert codec.canonical(codec.parse(first))==first
+
+
+def test_generic_jcs_still_rejects_rounding_unsafe_integer():
+    with pytest.raises(ValueError):
+        codec.canonical(codec.parse(b"9007199254740993"))

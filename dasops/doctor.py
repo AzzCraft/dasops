@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .task_markdown import table_rows, task_files
+
 import json
 import re
 from dataclasses import dataclass
@@ -127,7 +129,7 @@ def run_doctor(repo_root: Path) -> DoctorReport:
             )
 
         stray_tasks: list[Path] = []
-        for path in repo_root.rglob("tasks.md"):
+        for path in task_files(repo_root):
             rel = path.relative_to(repo_root)
             allowed = (
                 len(rel.parts) == 4
@@ -148,6 +150,18 @@ def run_doctor(repo_root: Path) -> DoctorReport:
         if tl_path.exists():
             try:
                 tl_data = json.loads(tl_path.read_text(encoding="utf-8"))
+                from jsonschema import Draft202012Validator
+                from referencing import Registry
+                from .repo_factory import default_factory_root
+                schema_path = repo_root / "openspec/schemas/das-standard/tooling_lock.schema.json"
+                if not schema_path.exists():
+                    schema_path = default_factory_root() / "templates/das-product/openspec/schemas/das-standard/tooling_lock.schema.json"
+                try:
+                    schema = json.loads(schema_path.read_text())
+                    Draft202012Validator.check_schema(schema)
+                    Draft202012Validator(schema, registry=Registry()).validate(tl_data)
+                except Exception as exc:
+                    problems.append(f"tooling_lock.json schema validation failed: {exc}")
                 if not isinstance(tl_data, dict):
                     problems.append("tooling_lock.json root must be an object")
                 else:
@@ -260,82 +274,33 @@ def run_doctor(repo_root: Path) -> DoctorReport:
             except (json.JSONDecodeError, ValueError) as exc:
                 problems.append(f"local_extension_manifest.json is not valid JSON: {exc}")
 
-        # Stale lock detection
+        # One guarded canonical snapshot per change; no nested per-lock reads.
+        from . import legacy_task_state as state
+        from .locks import _snapshot, is_stale
         changes_dir = repo_root / "openspec" / "changes"
-        if changes_dir.exists():
-            now = datetime.now(timezone.utc)
-            for lock_path in sorted(changes_dir.rglob("*.lock")):
+        if changes_dir.is_symlink():
+            problems.append("Invalid task changes directory")
+        elif changes_dir.exists():
+            for change in sorted(changes_dir.iterdir()):
                 try:
-                    lock_data = yaml.safe_load(lock_path.read_text(encoding="utf-8"))
-                except Exception:
-                    warnings.append(
-                        f"Could not parse lock: {lock_path.relative_to(repo_root)}"
-                    )
-                    continue
-                if not isinstance(lock_data, dict):
-                    warnings.append(
-                        f"Lock is not a YAML object: {lock_path.relative_to(repo_root)}"
-                    )
-                    continue
-                lock_missing = sorted(LOCK_KEYS - set(lock_data))
-                if lock_missing:
-                    warnings.append(
-                        f"Lock missing keys {lock_missing}: {lock_path.relative_to(repo_root)}"
-                    )
-                lock_status = str(lock_data.get("status", "")).strip()
-                if lock_status and lock_status not in TASK_ALLOWED_STATUSES:
-                    warnings.append(
-                        f"Lock has invalid status {lock_status!r}: "
-                        f"{lock_path.relative_to(repo_root)}"
-                    )
-                lease_seconds = int(lock_data.get("leaseSeconds", 0))
-                if lock_status == "IN_PROGRESS" and lease_seconds > 0:
-                    try:
-                        hb = datetime.fromisoformat(str(lock_data.get("heartbeatAt", "")))
-                        if hb.tzinfo is None:
-                            hb = hb.replace(tzinfo=timezone.utc)
-                        if (now - hb).total_seconds() > lease_seconds:
-                            warnings.append(
-                                f"Stale IN_PROGRESS lock: {lock_path.relative_to(repo_root)}"
-                            )
-                    except ValueError:
-                        warnings.append(
-                            f"Lock has invalid heartbeatAt: {lock_path.relative_to(repo_root)}"
-                        )
-
-            # Tasks.md table format validation
-            task_index_header = "| Task ID | Title | Owner | Status | Depends on | Verify gate |"
-            for tasks_md in sorted(changes_dir.glob("*/tasks.md")):
-                lines = tasks_md.read_text(encoding="utf-8", errors="replace").splitlines()
-                if task_index_header not in lines:
-                    warnings.append(
-                        f"tasks.md missing canonical index header: "
-                        f"{tasks_md.relative_to(repo_root)}"
-                    )
-                    continue
-                header_idx = lines.index(task_index_header)
-                for raw in lines[header_idx + 2:]:
-                    stripped = raw.strip()
-                    if not stripped.startswith("|"):
-                        break
-                    if stripped.startswith("| ---") or stripped.startswith("|---"):
+                    if change.is_symlink():
+                        raise state.StateError("invalid_state_directory")
+                    if not change.is_dir():
                         continue
-                    parts = [p.strip() for p in stripped.strip("|").split("|")]
-                    while len(parts) < 6:
-                        parts.append("")
-                    task_id, _title, _owner, status, _deps, verify_gate = parts[:6]
-                    if not task_id:
+                    if not (change / "tasks.md").exists() and not (change / "task_locks").exists():
                         continue
-                    if status not in TASK_ALLOWED_STATUSES:
-                        warnings.append(
-                            f"tasks.md row {task_id} invalid status {status!r}: "
-                            f"{tasks_md.relative_to(repo_root)}"
-                        )
-                    if "verify" not in verify_gate:
-                        warnings.append(
-                            f"tasks.md row {task_id} missing verify gate: "
-                            f"{tasks_md.relative_to(repo_root)}"
-                        )
+                    with state.guard(change):
+                        _, rows, locks = _snapshot(change)
+                    for lock in locks.values():
+                        if lock.status == "IN_PROGRESS" and is_stale(lock):
+                            warnings.append(f"Stale IN_PROGRESS lock: {change.name}/{lock.task_id}")
+                    for row in rows.values():
+                        if row.status not in TASK_ALLOWED_STATUSES:
+                            problems.append(f"Invalid task status: {change.name}/{row.task_id}")
+                        if not row.verify_gate.strip(" `") or row.verify_gate.strip(" `") == "-":
+                            problems.append(f"Missing verify gate: {change.name}/{row.task_id}")
+                except (state.StateError, ValueError, OSError) as exc:
+                    problems.append(f"Invalid task state {change.relative_to(repo_root)}: {exc}")
 
     if is_factory_repo:
         if not (repo_root / "dasops" / "__main__.py").exists():

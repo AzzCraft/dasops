@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "minimumCollectedTests": 1463,
+  "minimumCollectedTests": 1676,
   "publicTestPaths": [
     "tests/integration",
     "tests/bootstrap/test_adoption_prepare.py",
@@ -58,7 +58,15 @@
     "tests/protected/test_synthetic_evaluation.py",
     "tests/protected/test_standard_content.py",
     "tests/protected/test_sqlite_authority.py",
-    "tests/protected/test_legacy_import.py"
+    "tests/protected/test_legacy_import.py",
+    "tests/test_legacy_task_state.py",
+    "tests/test_public_entrypoints_review.py"
   ],
-  "description": "The public DASOps verifier executes its complete standalone pytest manifest. Consumer-specific conformance and DAS Tools release-builder tests belong to the internal integration boundary and are absent from public candidates. Raise the floor whenever a public test is added."
+  "description": "The public DASOps verifier executes its complete standalone pytest manifest. Consumer-specific conformance and DAS Tools release-builder tests belong to the internal integration boundary and are absent from public candidates. Raise the floor whenever a public test is added.",
+  "internalTestExclusions": {
+    "tests/bootstrap/test_beauty_conformance.py": "Internal consumer/release-builder integration; absent from public source exports.",
+    "tests/bootstrap/test_beauty_t026_registry_adapters.py": "Internal consumer/release-builder integration; absent from public source exports.",
+    "tests/bootstrap/test_beauty_t026_release_gates.py": "Internal consumer/release-builder integration; absent from public source exports.",
+    "tests/protected/test_release_candidate.py": "Internal consumer/release-builder integration; absent from public source exports."
+  }
 }

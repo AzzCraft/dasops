@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+from .identities import validate_id
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import yaml
+from .repo_factory import default_factory_root
+from .task_markdown import table_rows, visible_lines
 
 
 DRAFT_MARKER = "DASOPS:DRAFT"
@@ -34,7 +38,7 @@ def read_schema(repo_root: Path) -> List[Artifact]:
     schema_path = repo_root / "openspec" / "schemas" / "das-standard" / "schema.yaml"
     if not schema_path.exists():
         schema_path = (
-            Path(__file__).resolve().parents[1]
+            default_factory_root()
             / "templates"
             / "das-product"
             / "openspec"
@@ -43,59 +47,58 @@ def read_schema(repo_root: Path) -> List[Artifact]:
             / "schema.yaml"
         )
     data = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("artifacts"), list):
+        raise SystemExit(f"Invalid artifact schema {schema_path}: artifacts must be a list")
     artifacts: List[Artifact] = []
-    for entry in data.get("artifacts", []):
+    for entry in data["artifacts"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("requires", []), list):
+            raise SystemExit(f"Invalid artifact schema {schema_path}: entry/requires type")
         artifacts.append(
             Artifact(
-                id=entry["id"],
-                generates=entry["generates"],
+                id=entry.get("id"),
+                generates=entry.get("generates"),
                 requires=list(entry.get("requires", [])),
             )
         )
+    try:
+        validate_artifacts(artifacts)
+    except SystemExit as exc:
+        raise SystemExit(f"{schema_path}: {exc}") from exc
     return artifacts
 
 
-def parse_tasks_index(tasks_md: str) -> List[TaskRow]:
-    lines = tasks_md.splitlines()
-    header_idx = None
-    for index, raw in enumerate(lines):
-        stripped = raw.strip()
-        if stripped.startswith("| Task ID") and "Owner" in stripped and "Status" in stripped:
-            header_idx = index
-            break
-    if header_idx is None:
-        return []
+def validate_artifacts(artifacts):
+    ids = set()
+    for artifact in artifacts:
+        if (not isinstance(artifact, Artifact) or not isinstance(artifact.id, str) or not artifact.id.strip()
+                or not isinstance(artifact.generates, str) or not artifact.generates.strip()
+                or not isinstance(artifact.requires, list) or not all(isinstance(d, str) and d for d in artifact.requires)
+                or artifact.id in ids):
+            raise SystemExit("Invalid artifact schema: missing field, wrong type, or duplicate ID")
+        path = Path(artifact.generates)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit("Invalid artifact schema: generates must stay within the change")
+        ids.add(artifact.id)
+    for artifact in artifacts:
+        if any(dep not in ids for dep in artifact.requires):
+            raise SystemExit(f"Invalid artifact schema: {artifact.id} requires an unknown artifact")
 
-    rows: List[TaskRow] = []
-    for raw in lines[header_idx + 2 :]:
-        stripped = raw.strip()
-        if not stripped.startswith("|"):
-            break
-        if re.match(r"^\|\s*-{3,}", stripped):
-            continue
-        parts = [part.strip() for part in stripped.strip("|").split("|")]
-        while len(parts) < 6:
-            parts.append("")
-        task_id, title, owner, status, depends_on, verify_gate = parts[:6]
-        if not task_id:
-            continue
-        rows.append(
-            TaskRow(
-                task_id=task_id,
-                title=title,
-                owner=owner,
-                status=status,
-                depends_on=depends_on,
-                verify_gate=verify_gate,
-            )
-        )
-    return rows
+
+def parse_tasks_index(tasks_md: str) -> List[TaskRow]:
+    return [TaskRow(*parts) for _, parts in table_rows(tasks_md.splitlines()) if parts[0]]
 
 
 def find_task_section(md_lines: List[str], task_id: str) -> Optional[Tuple[int, int]]:
     start = None
-    for index, line in enumerate(md_lines):
-        if re.match(rf"^###\s+{re.escape(task_id)}\b", line):
+    visible = list(visible_lines(md_lines))
+    # An indexed ID may itself contain spaces. Prefer the longest declared ID
+    # before interpreting following words as a heading title.
+    ids = {task_id, *(parts[0] for _, parts in table_rows(md_lines) if parts[0])}
+    patterns = [(identity, re.compile(rf"^###\s+{re.escape(identity)}(?=\s|:\s|$)"))
+                for identity in sorted(ids, key=len, reverse=True)]
+    for index, line in enumerate(visible):
+        matched = next((identity for identity, pattern in patterns if pattern.match(line)), None)
+        if matched == task_id:
             start = index
             break
     if start is None:
@@ -103,7 +106,7 @@ def find_task_section(md_lines: List[str], task_id: str) -> Optional[Tuple[int, 
 
     end = len(md_lines)
     for index in range(start + 1, len(md_lines)):
-        if re.match(r"^###\s+", md_lines[index]):
+        if re.match(r"^###\s+", visible[index]):
             end = index
             break
     return start, end
@@ -147,7 +150,7 @@ def extract_task_verify_cmds(tasks_md: str, task_id: str) -> List[str]:
         ):
             in_verification = True
             for command in re.findall(r"`([^`]+)`", raw):
-                if "verify" in command:
+                if command.strip():
                     verify_cmds.append(command.strip())
             continue
 
@@ -155,7 +158,7 @@ def extract_task_verify_cmds(tasks_md: str, task_id: str) -> List[str]:
             if raw.startswith("- ") and not re.match(r"^-\s*`", raw):
                 break
             for command in re.findall(r"`([^`]+)`", raw):
-                if "verify" in command:
+                if command.strip():
                     verify_cmds.append(command.strip())
 
     out: List[str] = []
@@ -224,26 +227,11 @@ def task_hints_from_text(tasks_md: str, tasks_path: Path, task_id: str) -> Dict[
 
 
 def update_task_index_table(md_lines: List[str], task_id: str, owner: str, status: str) -> bool:
-    in_table = False
-    for index, line in enumerate(md_lines):
-        stripped = line.strip()
-        if stripped.startswith("| Task ID") and "Owner" in stripped and "Status" in stripped:
-            in_table = True
-            continue
-        if in_table:
-            if not stripped.startswith("|") or stripped == "|":
-                in_table = False
-                continue
-            if re.match(r"^\|\s*-{3,}", stripped):
-                continue
-            if re.match(rf"^\|\s*{re.escape(task_id)}\s*\|", stripped):
-                parts = [part.strip() for part in stripped.strip("|").split("|")]
-                while len(parts) < 6:
-                    parts.append("-")
-                parts[2] = owner
-                parts[3] = status
-                md_lines[index] = "| " + " | ".join(parts) + " |\n"
-                return True
+    for index, parts in table_rows(md_lines):
+        if parts[0] == task_id:
+            parts[2], parts[3] = owner, status
+            md_lines[index] = "| " + " | ".join(parts) + " |\n"
+            return True
     return False
 
 
@@ -290,11 +278,20 @@ def update_tasks_md_text(tasks_md: str, task_id: str, owner: str, status: str) -
     return "".join(lines), changed
 
 
-def split_deps(depends_on: str) -> List[str]:
+def split_deps(depends_on: str, known_ids=None) -> List[str]:
     normalized = (depends_on or "").strip()
     if not normalized or normalized == "-":
         return []
-    return [token.strip() for token in re.split(r"[\s,]+", normalized) if token.strip()]
+    lexer = shlex.shlex(normalized, posix=True)
+    lexer.whitespace += ","
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    tokens = list(lexer)
+    if known_ids is not None and normalized in known_ids and len(tokens) > 1:
+        if all(token in known_ids for token in tokens):
+            raise SystemExit('Ambiguous dependency; quote an ID containing spaces')
+        return [normalized]
+    return tokens
 
 
 def index_rows_by_id(rows: List[TaskRow]) -> Dict[str, TaskRow]:
@@ -308,6 +305,7 @@ def list_tasks(
     lock_reader,
     lock_path_for,
 ) -> List[Dict[str, object]]:
+    validate_id("change_id", change_id)
     change_dir = repo_root / "openspec" / "changes" / change_id
     tasks_path = change_dir / "tasks.md"
     if not tasks_path.exists():
@@ -354,11 +352,12 @@ def file_is_draft(path: Path) -> bool:
 
 
 def _text_is_draft(text: str) -> bool:
-    if DRAFT_MARKER in text:
-        return True
-    visible_text = re.sub(r"```.*?```", "", text, flags=re.S)
+    visible_text = "\n".join(visible_lines(text.splitlines()))
     visible_text = re.sub(r"`[^`\n]*`", "", visible_text)
-    return re.search(r"<[^>]+>", visible_text) is not None
+    if re.search(r"<!--\s*DASOPS:DRAFT(?:\s*:[^>]*|\s*)-->", visible_text):
+        return True
+    visible_text = re.sub(r"<(?:https?://|mailto:)[^>]+>", "", visible_text)
+    return re.search(r"<\w[\w -]*>", visible_text) is not None
 
 
 def _read_status_snapshot(change_dir: Path, artifacts=()):
@@ -392,6 +391,7 @@ def task_index_is_complete(path: Path) -> bool:
 
 
 def artifact_status(change_dir: Path, artifacts: List[Artifact]) -> Dict[str, str]:
+    validate_artifacts(artifacts)
     return _artifact_status_from_snapshot(artifacts, *_read_status_snapshot(change_dir, artifacts))
 
 
@@ -429,6 +429,7 @@ def _artifact_status_from_snapshot(artifacts, texts, rows):
 
 def print_status(repo_root: Path, change_id: str) -> None:
     artifacts = read_schema(repo_root)
+    validate_id("change_id", change_id)
     change_dir = repo_root / "openspec" / "changes" / change_id
     if not change_dir.exists():
         raise SystemExit(f"Change folder not found: {change_dir}")

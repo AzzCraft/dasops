@@ -9,13 +9,15 @@
 5. Task lock schema.
 6. Frontend evidence gate (main verify when `cadence.yaml` has boolean `ui.enabled: true`, or explicitly `scripts/verify-frontend`): `scripts/verify-frontend` requires
    `artifacts/frontend/visualMatrix.json` to match
-   `openspec/schemas/das-standard/visual_matrix.schema.json`, plus non-empty
+   `openspec/schemas/das-standard/visual_matrix.schema.json`, plus at least one ordinary evidence file in each of
    `artifacts/frontend/baseline/` and `artifacts/frontend/screenshots/`.
 
 ## Prerequisites
 
-- python3 >= 3.11
-- bash
+- Python >= 3.10; install the product’s `requirements.txt` (PyYAML and jsonschema).
+- Bash (not POSIX sh).
+
+JSON Schema validation uses the delivered local schemas and rejects remote reference retrieval. Frontend constraints such as `enum` are enforced; no network schema download is required.
 
 This legacy gate checks matrix structure and file presence only, once per invocation. It does not perform visual comparison, UI workflow validation or approve a DAS 1.5 applicability fact.
 Task-state readers share the local change guard and reject unresolved recovery records. Stop all old workers before upgrading one coordinated worktree; separate clones are not coordinated.

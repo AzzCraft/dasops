@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 import sys
+from ..identities import validate_id
 from dataclasses import dataclass
 
 TASK_ID = "DAS-DASOPS-CREATE"
@@ -23,8 +24,7 @@ class CreateResult:
 
 def create_change(workspace: pathlib.Path, change_id: str, *, title: str = "",
                   scope: str = "general") -> CreateResult:
-    if not change_id:
-        raise ValueError("changeId required")
+    validate_id("changeId", change_id)
     out_dir = workspace / "changes" / change_id
     if out_dir.exists():
         raise FileExistsError(f"{out_dir} already exists")
