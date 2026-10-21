@@ -91,9 +91,8 @@ class TaskCorpusGoldenTests(unittest.TestCase):
 
     def test_invalid_task_corpus_catches_column_and_status_drift(self) -> None:
         missing_verify = (GOLDEN_ROOT / "tasks" / "invalid" / "missing_verify_column.tasks.md").read_text(encoding="utf-8")
-        missing_rows = parse_tasks_index(missing_verify)
-        self.assertTrue(missing_rows)
-        self.assertIn("T-030: missing verify gate", lint_task_rows(missing_rows))
+        with self.assertRaisesRegex(ValueError, "exactly six columns"):
+            parse_tasks_index(missing_verify)
 
         invalid_status = (GOLDEN_ROOT / "tasks" / "invalid" / "invalid_status.tasks.md").read_text(encoding="utf-8")
         status_rows = parse_tasks_index(invalid_status)

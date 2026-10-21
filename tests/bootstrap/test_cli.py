@@ -136,6 +136,7 @@ def test_publisher_cli_sends_exact_canonical_invocation_over_authenticated_fd(
 
 
 def test_dasops_adoption_surface_uses_the_same_authenticated_driver_contract(tmp_path: Path, capfd) -> None:
+    (tmp_path / "canonical.git").mkdir()
     client, server = socket.socketpair()
     observed: list[dict] = []
     thread = threading.Thread(target=driver, args=(server, observed))
