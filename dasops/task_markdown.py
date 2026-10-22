@@ -1,5 +1,6 @@
 """Small shared parser for the documented six-column task table."""
 import re
+import shlex
 
 
 def visible_lines(lines):
@@ -10,7 +11,7 @@ def visible_lines(lines):
             token = marker.group(1)
             if fence is None:
                 fence = token
-            elif token[0] == fence[0] and len(token) >= len(fence):
+            elif token[0] == fence[0] and len(token) >= len(fence) and not line[marker.end():].strip():
                 fence = None
             yield ''
         else:
@@ -35,6 +36,42 @@ def cells(line):
     return parts
 
 
+def split_dependencies(value, known_ids=None):
+    value = (value or '').strip()
+    if not value or value == '-': return []
+    lexer = shlex.shlex(value, posix=True)
+    lexer.whitespace += ','
+    lexer.whitespace_split = True
+    lexer.commenters = ''
+    tokens = list(lexer)
+    if known_ids is not None and value in known_ids and len(tokens) > 1:
+        if all(token in known_ids for token in tokens):
+            raise ValueError('Ambiguous dependency; quote an ID containing spaces')
+        return [value]
+    return tokens
+
+
+def validate_graph(rows):
+    indexed = {parts[0]: parts for _, parts in rows if parts[0]}
+    if len(indexed) != len(rows): raise ValueError('Invalid task graph: duplicate or empty task ID')
+    remaining, children = {}, {key: [] for key in indexed}
+    for key, parts in indexed.items():
+        dependencies = set(split_dependencies(parts[4], indexed))
+        for dependency in dependencies:
+            if dependency not in indexed: raise ValueError(f'Invalid task graph: unknown dependency {dependency}')
+            children[dependency].append(key)
+        remaining[key] = len(dependencies)
+    ready = [key for key, count in remaining.items() if count == 0]
+    completed = 0
+    while ready:
+        key = ready.pop(); completed += 1
+        for child in children[key]:
+            remaining[child] -= 1
+            if remaining[child] == 0: ready.append(child)
+    if completed != len(indexed):
+        raise ValueError('Invalid task graph: dependency cycle: ' + ', '.join(sorted(key for key, count in remaining.items() if count)[:8]))
+
+
 def table_rows(lines):
     visible = list(visible_lines(lines))
     headers = [i for i, line in enumerate(visible)
@@ -51,6 +88,7 @@ def table_rows(lines):
         if re.match(r'^\|\s*-{3,}', line):
             continue
         rows.append((i, cells(line)))
+    validate_graph(rows)
     return rows
 
 

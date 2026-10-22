@@ -411,7 +411,8 @@ def audit_repo(repo_root: Path) -> AuditResult:
 
 def _normalization_conflicts(repo_root: Path) -> list[str]:
     conflicts: set[str] = set()
-    for rel, kind in {**REQUIRED_PATHS, "cadence.yaml": "file", ".dasops": "dir"}.items():
+    for rel, kind in {**REQUIRED_PATHS, "cadence.yaml": "file", ".dasops": "dir",
+                      ".dasops/adoption_evidence.json": "file"}.items():
         target = repo_root / rel
         for parent in target.parents:
             if parent == repo_root:

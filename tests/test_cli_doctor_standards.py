@@ -258,3 +258,43 @@ class StandardsCliTests(unittest.TestCase):
         pack_payload = json.loads(pack.stdout)
         self.assertEqual(pack_payload["role"], "backend")
         self.assertGreater(pack_payload["chapterCount"], 0)
+
+
+def test_standard_sibling_discovery_from_unrelated_product(tmp_path, monkeypatch):
+    from dasops import standards
+    workspace = tmp_path / 'tools'
+    package = workspace / 'dasops' / 'dasops' / 'standards.py'
+    package.parent.mkdir(parents=True)
+    standard = workspace / 'das-standard'
+    standard.mkdir()
+    for name in ('chapter_index.json', 'clause_index.json'):
+        (standard / name).write_text('{}')
+    product = tmp_path / 'independent' / 'product'
+    product.mkdir(parents=True)
+    monkeypatch.delenv('DAS_STANDARD_ROOT', raising=False)
+    monkeypatch.setattr(standards, '__file__', str(package))
+    assert standards.resolve_standard_root(product) == standard
+    explicit = tmp_path / 'explicit'
+    explicit.mkdir()
+    for name in ('chapter_index.json', 'clause_index.json'):
+        (explicit / name).write_text('{}')
+    monkeypatch.setenv('DAS_STANDARD_ROOT', str(explicit))
+    assert standards.resolve_standard_root(product) == explicit
+    assert standards.resolve_standard_root(product, str(standard)) == standard
+    # Exercise all three real CLI consumers from a self-contained sibling
+    # layout. Public CI must not depend on an actual neighbouring checkout.
+    import shutil
+    shutil.copytree(REPO_ROOT/'dasops', package.parent, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    for name in ('chapter_index.json', 'clause_index.json'):
+        shutil.copyfile(REPO_ROOT/'tests/fixtures/standard-indexes'/name, standard/name)
+    monkeypatch.delenv('DAS_STANDARD_ROOT', raising=False)
+    env = dict(os.environ, PYTHONPATH=str(package.parent.parent))
+    for arguments in [('search','--query','closure'), ('show','--clause','cl-2.5'), ('pack','--for','backend')]:
+        result = subprocess.run([sys.executable,'-m','dasops','standards',*arguments,
+                                 '--repo-root',str(product),'--json'],cwd=product,env=env,text=True,capture_output=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+        payload = json.loads(result.stdout)
+        if arguments[0] == 'search': assert payload['count'] > 0
+        elif arguments[0] == 'show': assert payload['id'] == 'cl-2.5'
+        else: assert payload['chapterCount'] > 0

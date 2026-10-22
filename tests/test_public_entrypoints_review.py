@@ -376,3 +376,94 @@ def test_factory_git_failure_does_not_publish_success_or_new_destination(tmp_pat
         repo_factory.create_product_repo(factory_root=factory, dest_dir=destination, master_doc_path=master, ui_spec_path=ui)
     assert not destination.exists()
     assert master.read_text() == '# Master\n' and ui.read_text() == '# UI\n'
+
+
+@pytest.mark.parametrize('dependencies', [('missing', '-'), ('A', '-'), ('B', 'A')])
+def test_invalid_task_dependency_graph_is_rejected(dependencies):
+    from dasops.tasks import parse_tasks_index
+    text = '| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n'
+    text += f'| A | first | - | TODO | {dependencies[0]} | true |\n| B | second | - | TODO | {dependencies[1]} | true |\n'
+    with pytest.raises(ValueError, match='Invalid task graph'): parse_tasks_index(text)
+    # A separate explicit DAG is the control, rather than repairing a malformed graph heuristically.
+    legal = '| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n| A | first | - | DONE | - | true |\n| B | second | - | TODO | A | true |\n'
+    assert len(parse_tasks_index(legal)) == 2
+
+
+def test_document_import_and_adoption_output_conflicts_preserve_inputs(tmp_path):
+    from dasops.repo_factory import init_repo
+    from dasops.adopt import adopt_report
+    docs = tmp_path / 'docs'; docs.mkdir()
+    (docs / 'master_doc.md').write_bytes(b'original master')
+    (docs / 'ui_spec.md').mkdir()
+    with pytest.raises(ValueError, match='conflict'):
+        init_repo(tmp_path, master_doc_bytes=b'new', ui_spec_bytes=b'new')
+    assert (docs / 'master_doc.md').read_bytes() == b'original master'
+    evidence_dir = tmp_path / '.dasops'; evidence_dir.mkdir()
+    external = tmp_path / 'external'; external.write_bytes(b'keep')
+    (evidence_dir / 'adoption_evidence.json').symlink_to(external)
+    result = adopt_report(tmp_path)
+    assert result['ok'] is False
+    assert external.read_bytes() == b'keep'
+    assert not (tmp_path/'cadence.yaml').exists()
+
+
+def test_existing_git_scaffold_preserves_index_and_records_new_baseline(tmp_path):
+    from dasops.repo_factory import create_product_repo_from_template
+    root = Path(__file__).resolve().parents[1]
+    master, ui = tmp_path/'master.md', tmp_path/'ui.md'
+    master.write_text('# Master\n'); ui.write_text('# UI\n')
+    product = tmp_path/'product'
+    args = dict(template_dir=root/'templates/das-product', dest_dir=product, master_doc_path=master, ui_spec_path=ui)
+    create_product_repo_from_template(**args)
+    user = product/'user.txt'; user.write_text('staged user content')
+    subprocess.run(['git','add','user.txt'],cwd=product,check=True)
+    before = subprocess.check_output(['git','write-tree'],cwd=product)
+    master.write_text('# Changed master\n')
+    with pytest.raises(RuntimeError, match='staged user'):
+        create_product_repo_from_template(**args, overwrite=True)
+    assert subprocess.check_output(['git','write-tree'],cwd=product) == before
+    assert (product/'docs/master_doc.md').read_text() == '# Master\n'
+    subprocess.run(['git','reset','--','user.txt'],cwd=product,check=True,capture_output=True)
+    create_product_repo_from_template(**args, overwrite=True)
+    pin = json.loads((product/'tooling_lock.json').read_text())['sourceOfTruth']['pinValue']
+    assert subprocess.check_output(['git','show',pin+':docs/master_doc.md'],cwd=product).decode() == '# Changed master\n'
+    assert subprocess.run(['git','ls-files','--error-unmatch','user.txt'],cwd=product,capture_output=True).returncode != 0
+    assert user.read_text() == 'staged user content'
+
+
+def test_default_branch_handles_business_ids_and_scaffold_trace(tmp_path):
+    import os
+    from dasops.repo_factory import create_product_repo_from_template
+    from dasops.adopt import trace_check
+    from dasops.__main__ import _branch_id
+    root = Path(__file__).resolve().parents[1]
+    master, ui = tmp_path/'master.md', tmp_path/'ui.md'
+    master.write_text('# Master\n'); ui.write_text('# UI\n')
+    product = tmp_path/'product'
+    create_product_repo_from_template(template_dir=root/'templates/das-product',dest_dir=product,master_doc_path=master,ui_spec_path=ui)
+    assert trace_check(product) == []
+    (product/'VERSION').write_text('0.1.1\n')
+    assert any('0.1.1' in issue for issue in trace_check(product))
+    (product/'VERSION').write_text('0.1.0\n')
+    change = product/'openspec/changes/release work'; change.mkdir()
+    (change/'tasks.md').write_text('| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n| build app | Build | - | TODO | - | true |\n\n### build app: Build\n- Owner: -\n- Status: TODO\n- Branch: -\n')
+    subprocess.run(['git','add','openspec'],cwd=product,check=True)
+    subprocess.run(['git','-c','user.name=TEST','-c','user.email=test@example.invalid','commit','-m','TEST task'],cwd=product,check=True,capture_output=True)
+    env = dict(os.environ, PYTHONPATH=str(root))
+    result = subprocess.run([sys.executable,'-m','dasops','start-task','--change-id','release work','--task-id','build app','--owner','TEST','--no-worktree','--json'],cwd=product,env=env,text=True,capture_output=True)
+    assert result.returncode == 0, result.stderr + result.stdout
+    value = json.loads(result.stdout)
+    assert value['branch'].startswith('feat/release%20work/build%20app-')
+    assert _branch_id('build app') != _branch_id('build%20app')
+
+
+def test_generated_verify_and_doctor_share_dependency_rejection(tmp_path):
+    from dasops.doctor import run_doctor
+    product = copy_template_repo(str(tmp_path))
+    positive = subprocess.run(['bash','scripts/verify'],cwd=product,text=True,capture_output=True)
+    assert positive.returncode == 0, positive.stdout + positive.stderr
+    change = product/'openspec/changes/graph'; change.mkdir(); (change/'task_locks').mkdir()
+    (change/'tasks.md').write_text('| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n| A | first | - | TODO | missing | true |\n')
+    negative = subprocess.run(['bash','scripts/verify'],cwd=product,text=True,capture_output=True)
+    assert negative.returncode != 0 and 'unknown dependency' in negative.stdout + negative.stderr
+    assert any('unknown dependency' in issue for issue in run_doctor(product).problems)

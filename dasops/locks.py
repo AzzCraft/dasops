@@ -150,7 +150,11 @@ def _snapshot(change: Path):
     if raw is None:
         raise state.StateError("missing_tasks")
     text = raw.decode("utf-8")
-    rows = parse_tasks_index(text)
+    try:
+        rows = parse_tasks_index(text)
+    except ValueError as exc:
+        reason = 'duplicate_task' if 'duplicate or empty task ID' in str(exc) else f'invalid_task_graph: {exc}'
+        raise state.StateError(reason) from exc
     by_id = {r.task_id: r for r in rows}
     if len(by_id) != len(rows):
         raise state.StateError("duplicate_task")

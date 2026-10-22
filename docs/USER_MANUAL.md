@@ -107,6 +107,17 @@ dasops create \
   --intent "Initial import"
 ```
 
+For an existing Git destination, `create --overwrite` refuses staged user
+changes before writing. With a clean index it commits only the managed scaffold
+and records the resulting bootstrap baseline; unrelated user files stay outside
+that commit. Document imports and adoption evidence paths reject output aliases
+or type conflicts before changing managed content.
+
+Business IDs may contain spaces or Unicode. Default feature branches encode
+those IDs into distinct Git-safe components; metadata retains the original IDs.
+Unknown dependencies and cycles are rejected by the CLI, doctor and generated
+verification script.
+
 After creation
 
 ```
