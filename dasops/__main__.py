@@ -140,6 +140,11 @@ def _is_placeholder(value: str) -> bool:
     return False
 
 
+def _branch_id(value: str) -> str:
+    from urllib.parse import quote
+    return quote(value, safe='-').replace('.', '%2E').replace('~', '%7E')
+
+
 def _slugify(value: str) -> str:
     v = (value or "").strip().lower()
     v = re.sub(r"[^a-z0-9]+", "-", v)
@@ -941,7 +946,7 @@ def main(argv=None) -> int:
 
                 suggested_branch = expected_branch
                 if _is_placeholder(suggested_branch):
-                    suggested_branch = f"feat/{args.change_id}/{args.task_id}"
+                    suggested_branch = f"feat/{_branch_id(args.change_id)}/{_branch_id(args.task_id)}"
 
                 if current_branch in {"main", "master"}:
                     print("\nNote:")
@@ -1144,7 +1149,11 @@ def main(argv=None) -> int:
                     title = str(t.get("title", ""))
                     break
             slug = _slugify(title) if title else "task"
-            branch = f"feat/{args.change_id}/{args.task_id}-{slug}" if slug else f"feat/{args.change_id}/{args.task_id}"
+            # Escape business IDs reversibly; spaces and ref metacharacters are
+            # valid task data but must not become invalid or colliding refs.
+            change_ref = _branch_id(args.change_id)
+            task_ref = _branch_id(args.task_id)
+            branch = f"feat/{change_ref}/{task_ref}-{slug}" if slug else f"feat/{change_ref}/{task_ref}"
 
         base = str(args.base).strip() if args.base else _pick_base_branch(repo_root)
 

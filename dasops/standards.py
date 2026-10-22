@@ -58,7 +58,7 @@ def _candidate_standard_roots(repo_root: Path, override: str | None) -> list[Pat
     return [
         repo_root / "das-standard",
         repo_root.parent / "das-standard",
-        package_root.parent / "das-standard",
+        package_root / "das-standard",
     ]
 
 

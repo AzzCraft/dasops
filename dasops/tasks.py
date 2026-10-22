@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple
 
 import yaml
 from .repo_factory import default_factory_root
-from .task_markdown import table_rows, visible_lines
+from .task_markdown import table_rows, visible_lines, split_dependencies
 
 
 DRAFT_MARKER = "DASOPS:DRAFT"
@@ -279,19 +279,7 @@ def update_tasks_md_text(tasks_md: str, task_id: str, owner: str, status: str) -
 
 
 def split_deps(depends_on: str, known_ids=None) -> List[str]:
-    normalized = (depends_on or "").strip()
-    if not normalized or normalized == "-":
-        return []
-    lexer = shlex.shlex(normalized, posix=True)
-    lexer.whitespace += ","
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    tokens = list(lexer)
-    if known_ids is not None and normalized in known_ids and len(tokens) > 1:
-        if all(token in known_ids for token in tokens):
-            raise SystemExit('Ambiguous dependency; quote an ID containing spaces')
-        return [normalized]
-    return tokens
+    return split_dependencies(depends_on, known_ids)
 
 
 def index_rows_by_id(rows: List[TaskRow]) -> Dict[str, TaskRow]:

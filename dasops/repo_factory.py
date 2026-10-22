@@ -166,6 +166,15 @@ def create_product_repo_from_template(
             f"Destination directory is not empty: {dest_dir}\n"
             "Refusing to overwrite. Use --overwrite if you really want this."
         )
+    existing_git = init_git and (dest_dir / ".git").exists()
+    if existing_git:
+        head = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=dest_dir,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if head.returncode:
+            raise RuntimeError("Existing Git destination needs a committed HEAD before scaffold overwrite")
+        index = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=dest_dir)
+        if index.returncode != 0:
+            raise RuntimeError("Refusing scaffold overwrite with staged user changes; preserve/commit them first")
     dest_dir.parent.mkdir(parents=True, exist_ok=True)
     # Build a complete scaffold before touching the target. TemporaryDirectory
     # owns only this staging directory, never the user's existing destination.
@@ -195,7 +204,18 @@ def create_product_repo_from_template(
                     raise ValueError(f"Destination type conflict: {target}")
             shutil.copytree(staged, dest_dir, dirs_exist_ok=True)
             if init_git:
-                maybe_git_init(dest_dir)
+                if existing_git:
+                    managed = [str(path.relative_to(staged)) for path in staged.rglob("*") if path.is_file()]
+                    subprocess.run(["git", "add", "--", *managed], cwd=dest_dir, check=True)
+                    changed = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=dest_dir)
+                    if changed.returncode == 1:
+                        subprocess.run(["git", "-c", "user.name=dasops", "-c", "user.email=dasops@local",
+                                        "commit", "-m", "chore: update DAS scaffold", "--only", "--", *managed],
+                                       cwd=dest_dir, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    elif changed.returncode:
+                        raise RuntimeError("Unable to inspect scaffold index")
+                else:
+                    maybe_git_init(dest_dir)
                 finalize_bootstrap_provenance(dest_dir)
             else:
                 _mark_lock_pin_pending(dest_dir)
@@ -278,6 +298,7 @@ def finalize_bootstrap_provenance(repo_root: Path) -> str | None:
                     "commit",
                     "-m",
                     "chore: record bootstrap source identity",
+                    "--only", "--", "tooling_lock.json",
                 ],
                 cwd=str(repo_root),
                 check=True,
@@ -373,10 +394,31 @@ def init_repo(
 
     if change_id:
         _validate_change_id(change_id)
+        if (repo_root / "openspec" / "changes" / change_id).exists():
+            raise ValueError("Change already exists; refusing partial document import")
     docs_dir = repo_root / "docs"
+    targets = [docs_dir / "master_doc.md", docs_dir / "ui_spec.md"]
+    for target in targets:
+        for parent in (target, *target.parents):
+            if parent == repo_root:
+                break
+            if parent.is_symlink() or (parent.exists() and
+                    (not parent.is_file() if parent == target else not parent.is_dir())):
+                raise ValueError(f"Document import target conflict: {target}")
+        if target.exists() and target.stat().st_nlink != 1:
+            raise ValueError(f"Document import target is shared: {target}")
+    before = {target: target.read_bytes() if target.exists() else None for target in targets}
     docs_dir.mkdir(parents=True, exist_ok=True)
-    (docs_dir / "master_doc.md").write_bytes(master_doc_bytes)
-    (docs_dir / "ui_spec.md").write_bytes(ui_spec_bytes)
+    try:
+        targets[0].write_bytes(master_doc_bytes)
+        targets[1].write_bytes(ui_spec_bytes)
+    except OSError:
+        for target, original in before.items():
+            if original is None:
+                target.unlink(missing_ok=True)
+            else:
+                target.write_bytes(original)
+        raise
 
     if change_id:
         new_change(repo_root=repo_root, change_id=change_id, intent=change_intent or "")

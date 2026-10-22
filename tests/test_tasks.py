@@ -419,6 +419,21 @@ if __name__ == "__main__":
     unittest.main()
 
 class TestReviewedTaskMarkdown(unittest.TestCase):
+    def test_fence_with_suffix_does_not_expose_example_tasks(self):
+        import runpy
+        from pathlib import Path
+        from dasops.task_markdown import table_rows
+        template = Path(__file__).resolve().parents[1] / 'templates/das-product/scripts/task_markdown.py'
+        readers = [table_rows, runpy.run_path(str(template))['table_rows']]
+        header = '| Task ID | Title | Owner | Status | Depends | Gate |\n| --- | --- | --- | --- | --- | --- |\n'
+        example = header + '| EXAMPLE | Example | alice | TODO | - | - |\n'
+        active = header + '| REAL | Actual task | alice | TODO | - | - |\n'
+        for fence in ('```', '~~~'):
+            text = fence + 'markdown\n' + fence + 'not-a-close\n' + example + fence + '\n\n' + active
+            for read in readers:
+                with self.subTest(fence=fence, reader=read.__module__):
+                    self.assertEqual([parts[0] for _, parts in read(text.splitlines())], ['REAL'])
+
     def test_escaped_pipe_fences_and_exact_detail_binding(self):
         active = SAMPLE_TASKS_MD.replace("First task", r"First \| task")
         example = SAMPLE_TASKS_MD.replace("T-001", "EXAMPLE")
