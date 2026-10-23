@@ -22,7 +22,7 @@ def build_install_cadence_command(
         raise ValueError("Choose a local Suite source or a remote source")
     if from_suite:
         suite = Path(from_suite).expanduser().resolve()
-        if not suite.is_dir() or not (suite.parent / "cadence-oss").is_dir():
+        if not suite.is_dir() or not ((suite / "suite_lock.json").is_file() or (suite.parent / "cadence-oss").is_dir()):
             raise ValueError("Local source requires das-suite with sibling cadence-oss")
     elif not (git_base and git_base.strip()) and not (org and org.strip()):
         raise ValueError("Provide --from-suite, --git-base or --org explicitly")
@@ -55,7 +55,16 @@ def validate_vendor_integrity(
     Returns a list of drift descriptions (empty if all match).
     """
     drifts: list[str] = []
-    pins = vendor_lock.get("pins", vendor_lock.get("components", {}))
+    if "sourceOfTruth" in vendor_lock or "verifyRuntime" in vendor_lock:
+        runtime = vendor_lock.get("verifyRuntime")
+        if not isinstance(runtime, dict) or not runtime.get("pinValue"):
+            return ["Standard lock requires a fixed verifyRuntime"]
+        if installed_artifacts.get("verifyRuntime") != runtime:
+            return ["Standard runtime requires verified installed source, binary and resources"]
+        return []
+    pins = vendor_lock.get("pins", vendor_lock.get("components"))
+    if not isinstance(pins, dict) or not pins:
+        return ["unsupported or empty vendor lock contract"]
     for name, expected_version in pins.items():
         actual = installed_artifacts.get(name)
         if actual is None:
@@ -74,6 +83,13 @@ def enforce_vendor_lock(repo_root: str | Path) -> list[str]:
     if not lock_path.exists():
         return ["tooling_lock.json not found"]
     vendor_lock = load_vendor_lock(lock_path)
+    if vendor_lock.get("standardManifestVersion") == "1.5.0-beta.1":
+        from .scaffold_v15 import installed as check_installed
+        try:
+            check_installed(Path(repo_root).resolve())
+            return []
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            return [str(exc)]
     installed = _detect_installed(repo_root)
     return validate_vendor_integrity(vendor_lock, installed)
 

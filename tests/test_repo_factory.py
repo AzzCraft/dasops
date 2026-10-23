@@ -49,5 +49,29 @@ class TestSeedMachineReadableArtifacts(unittest.TestCase):
             self.assertTrue(data.get("custom"))
 
 
+class TestV15ScaffoldInputs(unittest.TestCase):
+    def test_metadata_is_confined_to_document_control(self):
+        from dasops.scaffold_v15 import metadata
+        text = "# Fixture\n## Document Control\n- **Project slug** (stable identifier): `fixture-product`\n- **Status:** draft\n## Behavior\n- **Status:** active\n- **MUST**: unrelated prose\n"
+        self.assertEqual(metadata(text), {"Project slug":"fixture-product","Status":"draft"})
+
+    def test_duplicate_control_fields_reject(self):
+        from dasops.scaffold_v15 import metadata
+        with self.assertRaisesRegex(ValueError,"ambiguous"):
+            metadata("## Document Control\n- **Status:** draft\n- **Status:** active\n")
+
+    def test_legacy_and_unknown_vendor_formats_are_distinct(self):
+        from dasops.vendor import validate_vendor_integrity
+        self.assertTrue(validate_vendor_integrity({}, {}))
+        self.assertTrue(validate_vendor_integrity({"pins":{}}, {}))
+        self.assertTrue(validate_vendor_integrity({"verifyRuntime":{"pinValue":"fixed"}}, {}))
+
+    def test_local_references_do_not_escape(self):
+        from dasops.scaffold_v15 import local
+        with tempfile.TemporaryDirectory() as temp:
+            for value in ("../outside", "/outside"):
+                with self.assertRaises(ValueError):local(Path(temp),value)
+
+
 if __name__ == "__main__":
     unittest.main()

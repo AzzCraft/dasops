@@ -225,7 +225,12 @@ def main(argv=None) -> int:
     p_create = sub.add_parser("create", help="Create a NEW product repo (physical isolation) from the factory template")
     p_create.add_argument("--dest", required=True, help="Destination directory for the new product repo")
     p_create.add_argument("--master-doc", required=True, help="Path to master_doc.md")
-    p_create.add_argument("--ui-spec", required=True, help="Path to ui_spec.md")
+    p_create.add_argument("--ui-spec", required=False, help="Path to ui_spec.md")
+    p_create.add_argument("--standard-release", default="1.4.0", choices=["1.4.0", "1.5.0-beta.1"])
+    p_create.add_argument("--from-suite", help="Fixed, synced Suite workspace for 1.5")
+    p_create.add_argument("--headless-note")
+    p_create.add_argument("--context-pack")
+    p_create.add_argument("--extension-manifest")
     p_create.add_argument("--change-id", default=None, help="Optional initial change id, e.g. initial")
     p_create.add_argument("--intent", default="", help="Optional intent string for the initial change")
     p_create.add_argument("--factory-root", default=None, help="Factory repo root (defaults to this source tree)")
@@ -495,7 +500,7 @@ def main(argv=None) -> int:
             if args.factory_root
             else _default_factory_root()
         )
-        dest = Path(args.dest).expanduser().resolve()
+        dest = Path(args.dest).expanduser().absolute()
 
         # Guardrail: avoid creating product repos inside the factory repo.
         try:
@@ -518,16 +523,24 @@ def main(argv=None) -> int:
                 factory_root=factory_root,
                 dest_dir=dest,
                 master_doc_path=Path(args.master_doc).expanduser().resolve(),
-                ui_spec_path=Path(args.ui_spec).expanduser().resolve(),
+                ui_spec_path=Path(args.ui_spec).expanduser().resolve() if args.ui_spec else None,
+                standard_release=args.standard_release,
+                from_suite=Path(args.from_suite) if args.from_suite else None,
+                headless_note_path=Path(args.headless_note) if args.headless_note else None,
+                context_pack_path=Path(args.context_pack) if args.context_pack else None,
+                extension_manifest_path=Path(args.extension_manifest) if args.extension_manifest else None,
                 change_id=args.change_id,
                 intent=args.intent,
                 init_git=not args.no_git,
                 overwrite=args.overwrite,
                 change_empty=args.change_empty,
             )
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             raise SystemExit(str(exc)) from exc
         print(f"Created product repo: {dest}")
+        if args.standard_release == "1.5.0-beta.1":
+            from .scaffold_v15 import verify
+            print(json.dumps(verify(dest, scope="scaffold"), indent=2))
         return 0
 
     governed_result = handle_govern(args)

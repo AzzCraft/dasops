@@ -245,6 +245,11 @@ FRONTEND_EVIDENCE_RUNTIME_MARKERS = {
 
 
 def run_template_audit(factory_root: Path) -> TemplateAuditReport:
+    if (factory_root / ".dasops-scaffold.json").is_file():
+        from .scaffold_v15 import verify
+        result = verify(factory_root, scope="scaffold")
+        return TemplateAuditReport(factory_root, factory_root, result["problems"], result["pendingItems"],
+                                   [], [], {}, {}, {}, {}, {}, {}, {})
     factory_root = factory_root.resolve()
     template_root = factory_root / "templates" / "das-product"
     problems: list[str] = []

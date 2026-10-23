@@ -387,3 +387,14 @@ it once. The governed matrix schema is at
 The standard template runtime expects `artifacts/frontend/visualMatrix.json`
 to match that schema,
 `artifacts/frontend/baseline/`, and `artifacts/frontend/screenshots/`.
+
+## Explicit 1.5 beta creation
+
+Use the [1.5 scaffold instructions](../README.md#standard-15-scaffold-explicit-beta-selection).
+CLI and GUI use the same backend and conditional document checks. The GUI
+imports documents; it does not invent project facts or approval. Select a fixed
+synced Suite workspace, then upload the Master and applicable UI/headless/L2
+files. Optional Cadence installation uses that same workspace. Creation,
+installation and checks have separate results; a saved draft remains a draft.
+
+For UI projects, implement the actual product tests in the generated `scripts/verify-frontend`. The initial entry fails explicitly; full verification calls it and reports its exit separately from native core checks. It must not call the top-level verify script recursively. Passing that command is not a claim that DASOps itself evaluated the UI.
