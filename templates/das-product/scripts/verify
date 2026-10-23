@@ -29,7 +29,7 @@ import yaml
 
 REPO_ROOT = Path(os.environ["REPO_ROOT"]).resolve()
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
-from task_markdown import table_rows, task_files
+from task_markdown import table_rows, task_files, require_index_rows
 REQUIRED_FILES = [
     REPO_ROOT / "docs" / "master_doc.md",
     REPO_ROOT / "docs" / "ui_spec.md",
@@ -241,11 +241,9 @@ def check_tasks_index_contract() -> int:
     for tasks_md in sorted(changes_dir.glob("*/tasks.md")):
         lines = read_state_text(tasks_md).splitlines()
         try:
-            rows = table_rows(lines)
+            rows = require_index_rows(table_rows(lines))
         except ValueError as exc:
             return fail(f"Invalid task table {tasks_md.relative_to(REPO_ROOT)}: {exc}")
-        if not rows:
-            return fail(f"tasks.md missing canonical index rows: {tasks_md.relative_to(REPO_ROOT)}")
         tasks = {}
         for _, parts in rows:
             task_id, _title, owner, status, _depends_on, verify_gate = parts

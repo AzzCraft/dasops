@@ -21,6 +21,41 @@ def _base_env() -> dict[str, str]:
 
 
 class DoctorStrictCliTests(unittest.TestCase):
+    def test_active_task_index_agrees_with_generated_verifier(self):
+        import shutil
+        from unittest.mock import patch
+        from dasops.doctor import run_doctor
+        from dasops.locks import _snapshot
+        from dasops.legacy_task_state import StateError
+        header = '| Task ID | Title | Owner | Status | Depends On | Verify Gate |\n|---|---|---|---|---|---|\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self._write_product_repo_minimum(repo)
+            self.assertEqual(run_doctor(repo).problems, [])
+            scripts = repo / 'scripts'; scripts.mkdir()
+            template = REPO_ROOT / 'templates/das-product/scripts'
+            shutil.copy2(template / 'task_markdown.py', scripts)
+            source = (template / 'verify').read_text().split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+            namespace = {'__name__': 'generated_verifier_test'}
+            with patch.dict(os.environ, REPO_ROOT=str(repo)):
+                exec(compile(source, str(template / 'verify'), 'exec'), namespace)
+            check = namespace['check_tasks_index_contract']
+            self.assertEqual(check(), 0)  # no active change
+            change = repo / 'openspec/changes/sample'; change.mkdir(parents=True)
+            for text in ['# Tasks\n\n## T-001\nDetails only\n', header,
+                         header + '| T-001 | first | - | TODO | - | `true` |\n',
+                         header + '| T-001 | first | worker | DONE | - | `true` |\n']:
+                with self.subTest(text=text):
+                    (change / 'tasks.md').write_text(text)
+                    valid = '| T-001 |' in text
+                    if valid:
+                        self.assertEqual(len(_snapshot(change)[1]), 1)
+                    else:
+                        with self.assertRaisesRegex(StateError, 'missing canonical index rows'):
+                            _snapshot(change)
+                    self.assertEqual(run_doctor(repo).problems == [], valid)
+                    self.assertEqual(check() == 0, valid)
+
     def _write_product_repo_minimum(self, repo: Path) -> None:
         (repo / ".dasops_product_repo").write_text("", encoding="utf-8")
 

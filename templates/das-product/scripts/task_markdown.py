@@ -72,6 +72,12 @@ def validate_graph(rows):
         raise ValueError('Invalid task graph: dependency cycle: ' + ', '.join(sorted(key for key, count in remaining.items() if count)[:8]))
 
 
+def require_index_rows(rows):
+    if not rows:
+        raise ValueError('tasks.md missing canonical index rows')
+    return rows
+
+
 def table_rows(lines):
     visible = list(visible_lines(lines))
     headers = [i for i, line in enumerate(visible)

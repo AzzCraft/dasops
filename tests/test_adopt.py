@@ -45,6 +45,30 @@ class TestAuditRepo(unittest.TestCase):
 
 
 class TestNormalizeRepo(unittest.TestCase):
+    def test_evidence_hardlink_refuses_before_any_repair(self):
+        import os
+        from dasops.adopt import adopt_report, normalize_report
+        for command in (normalize_report, adopt_report):
+            with self.subTest(command=command.__name__), TemporaryDirectory() as tmp:
+                root = Path(tmp) / 'product'
+                (root / '.dasops').mkdir(parents=True)
+                other = Path(tmp) / 'preserve.txt'
+                other.write_bytes(b'irreplaceable')
+                evidence = root / '.dasops/adoption_evidence.json'
+                os.link(other, evidence)
+                before = sorted(p.relative_to(root) for p in root.rglob('*'))
+                result = command(root)
+                self.assertFalse(result['ok'])
+                self.assertTrue(any('hard link' in f for f in result['findings']))
+                self.assertEqual(other.read_bytes(), b'irreplaceable')
+                self.assertEqual(evidence.read_bytes(), b'irreplaceable')
+                self.assertEqual(before, sorted(p.relative_to(root) for p in root.rglob('*')))
+                evidence.unlink()
+                evidence.write_bytes(b'old evidence')
+                self.assertTrue(adopt_report(root)['ok'])
+                self.assertEqual(other.read_bytes(), b'irreplaceable')
+                self.assertIn('adopted', evidence.read_text())
+
     def test_conflicts_refuse_both_commands_without_writing(self):
         from dasops.__main__ import main
         from contextlib import redirect_stdout

@@ -421,6 +421,9 @@ def _normalization_conflicts(repo_root: Path) -> list[str]:
                 conflicts.add(f"{parent.relative_to(repo_root)} must be a real directory")
         if target.is_symlink() or (target.exists() and (target.is_dir() if kind == "dir" else target.is_file()) is False):
             conflicts.add(f"{rel} must be a real {kind}")
+        elif rel == ".dasops/adoption_evidence.json" and target.exists():
+            if target.lstat().st_nlink != 1:
+                conflicts.add(f"{rel} must not be a shared hard link")
     return sorted(conflicts)
 
 
