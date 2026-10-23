@@ -7,6 +7,7 @@ import shlex
 from .identities import validate_id, normalize_owner
 import subprocess
 from . import legacy_task_state as state
+from .task_markdown import require_index_rows
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -151,7 +152,7 @@ def _snapshot(change: Path):
         raise state.StateError("missing_tasks")
     text = raw.decode("utf-8")
     try:
-        rows = parse_tasks_index(text)
+        rows = require_index_rows(parse_tasks_index(text))
     except ValueError as exc:
         reason = 'duplicate_task' if 'duplicate or empty task ID' in str(exc) else f'invalid_task_graph: {exc}'
         raise state.StateError(reason) from exc
