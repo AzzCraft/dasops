@@ -223,7 +223,7 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
         except ValueError: raise ValueError(kind + ': Last updated must be YYYY-MM-DD')
     if fields['Status'] not in ('draft', 'active', 'frozen', 'deprecated'):
         raise ValueError(kind + ': invalid Status')
-    if EDITION not in fields['Governing standard']:
+    if not re.search(r'\bv?' + re.escape(EDITION) + r'(?![\w+-]|\.\w)', fields['Governing standard']):
         raise ValueError(kind + ': Governing standard must name ' + EDITION)
     if kind == 'master_doc':
         if fields.get('Doc family role') != 'canonical_entrypoint': raise ValueError('Master must be canonical_entrypoint')
@@ -278,6 +278,14 @@ def resource_manifest(cadence):
     return resources
 
 
+def required_documents(fields, master_refs):
+    required = {'headless_surface_note'} if fields['Interaction profile'] == 'headless' else {'ui_spec'}
+    if fields['Conformance profile'] == 'L2': required.add('context_pack')
+    for kind in ('headless_surface_note', 'ui_spec', 'context_pack'):
+        if 'docs/' + kind + '.md' in master_refs: required.add(kind)
+    return required
+
+
 def _publish(staged, destination, empty_inode=None):
     """Linux no-replace publish; an existing empty directory is exchanged atomically."""
     if sys.platform != 'linux': raise ValueError('1.5 scaffold publication currently supports Linux')
@@ -318,8 +326,9 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     if destination.exists():
         st = destination.stat();empty_inode = (st.st_dev, st.st_ino)
     suite, modules, report = suite_inputs(from_suite)
+    resolved_destination = destination.resolve()
     for source in (suite, *modules.values(), Path(factory_root).resolve()):
-        if source == destination or source.is_relative_to(destination) or destination.is_relative_to(source):
+        if source == resolved_destination or source.is_relative_to(resolved_destination) or resolved_destination.is_relative_to(source):
             raise ValueError('destination must be separate from source resources')
     identity = code_identity(modules['dasops'], Path(factory_root))
     standard = modules['das-standard']; cadence = modules['cadence-oss']
@@ -332,11 +341,7 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     master_refs=document_prose(master.decode())
     profile = fields['Interaction profile']; documents = {'master_doc': ('docs/master_doc.md', master)}
     inputs = {'ui_spec': ui_spec_path, 'headless_surface_note': headless_note_path, 'context_pack': context_pack_path}
-    required = {'headless_surface_note'} if profile == 'headless' else {'ui_spec'}
-    if fields['Conformance profile'] == 'L2': required.add('context_pack')
-    # Mixed surfaces are explicit Master references; never infer facts from absent files.
-    for kind in ('headless_surface_note', 'ui_spec'):
-        if 'docs/' + kind + '.md' in master_refs: required.add(kind)
+    required = required_documents(fields, master_refs)
     for kind, source in inputs.items():
         if kind in required and source is None: raise ValueError('required document: ' + kind)
         if source is not None:
@@ -460,8 +465,7 @@ def verify(root, scope='scaffold'):
         manifest=load(base/'standard_manifest.json')
         docs=state['documents'];master=read(local(root,docs['master_doc']));fields,_=document_check('master_doc',master,authors,manifest=manifest)
         master_refs=document_prose(master.decode())
-        required={'headless_surface_note'} if fields['Interaction profile']=='headless' else {'ui_spec'}
-        if fields['Conformance profile']=='L2':required.add('context_pack')
+        required=required_documents(fields, master_refs)
         if not required<=set(docs):raise ValueError('missing conditional documents')
         if fields['Interaction profile']!=state['interactionProfile'] or fields['Project slug']!=state['projectId']:
             raise ValueError('document identity differs from scaffold configuration')
@@ -488,7 +492,7 @@ def verify(root, scope='scaffold'):
             if derived[name]!=original[name]:raise ValueError('derived closure identity changed: '+name)
         expected={'suiteToolingLock':'tooling/das/suite/suite.tooling_lock.json','repoToolingLock':'tooling_lock.json'}
         if derived['lockRefs']!={key:file_ref(value) for key,value in expected.items()}:raise ValueError('invalid product lock alignment')
-        if lock['suiteLockRef']!=derived['suiteLockRef'] or lock['suiteVersionClosureRef']!=file_ref('tooling/das/suite_version_closure.json'):
+        if derived['suiteLockRef']!=file_ref('tooling/das/suite/suite_lock.json') or lock['suiteLockRef']!=derived['suiteLockRef'] or lock['suiteVersionClosureRef']!=file_ref('tooling/das/suite_version_closure.json'):
             raise ValueError('product closure paths differ')
         for value in [derived['suiteLockRef'],*derived['lockRefs'].values(),lock['suiteVersionClosureRef']]:read(local(root,value))
         mirrors=lock.get('mirrors',[])
