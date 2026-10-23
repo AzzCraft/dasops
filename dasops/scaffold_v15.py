@@ -558,7 +558,7 @@ def _install_locked(root, suite, force=False):
             raise ValueError('built runtime identity differs; previous install retained')
         record['platform'] = {key:identity[key] for key in ('goos','goarch','goVersion')}
         write_json(staged/'.dasops-install.json',record)
-        previous=Path(temp)/'previous' 
+        previous=Path(temp)/'previous'
         if target.exists():target.rename(previous)
         try:staged.rename(target)
         except OSError:
