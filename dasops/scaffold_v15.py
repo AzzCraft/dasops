@@ -197,6 +197,19 @@ def author_section(entry, source):
     return ''.join(selected)
 
 
+def document_prose(text):
+    """Exclude fenced examples and comments from document-reference decisions."""
+    rows=[];fence=None
+    for line in re.sub(r'<!--.*?-->','',text,flags=re.S).splitlines():
+        mark=re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$',line)
+        if mark:
+            if fence is None:fence=mark[1]
+            elif mark[1][0]==fence[0] and len(mark[1])>=len(fence) and not mark[2].strip():fence=None
+            continue
+        if fence is None:rows.append(line)
+    return '\n'.join(rows)
+
+
 def document_check(kind, data, authors, *, project=None, master_profile=None, manifest=None):
     text = data.decode('utf-8'); fields = metadata(text)
     required = manifest['requiredDocMetadata'][kind] if manifest is not None else ('Doc ID', 'Owner', 'Status', 'Governing standard')
@@ -316,35 +329,36 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     entries = {e['docType']: e for e in catalog['templates']}
     authors = {kind: author_section(e, read(local(standard, e['artifactPath']))) for kind,e in entries.items()}
     master = read(master_doc_path); fields, _ = document_check('master_doc', master, authors, manifest=manifest)
+    master_refs=document_prose(master.decode())
     profile = fields['Interaction profile']; documents = {'master_doc': ('docs/master_doc.md', master)}
     inputs = {'ui_spec': ui_spec_path, 'headless_surface_note': headless_note_path, 'context_pack': context_pack_path}
     required = {'headless_surface_note'} if profile == 'headless' else {'ui_spec'}
     if fields['Conformance profile'] == 'L2': required.add('context_pack')
     # Mixed surfaces are explicit Master references; never infer facts from absent files.
     for kind in ('headless_surface_note', 'ui_spec'):
-        if 'docs/' + kind + '.md' in master.decode(): required.add(kind)
+        if 'docs/' + kind + '.md' in master_refs: required.add(kind)
     for kind, source in inputs.items():
         if kind in required and source is None: raise ValueError('required document: ' + kind)
         if source is not None:
             path = 'docs/' + kind + '.md'
-            if path not in master.decode(): raise ValueError('Master must reference ' + path)
+            if path not in master_refs: raise ValueError('Master must reference ' + path)
             data = read(source); document_check(kind, data, authors, project=fields['Project slug'], master_profile=profile, manifest=manifest)
             documents[kind] = (path, data)
     extension = read(extension_manifest_path) if extension_manifest_path else None
-    if extension is None and 'local_extension_manifest.json' in master.decode():
+    if extension is None and 'local_extension_manifest.json' in master_refs:
         raise ValueError('Master references a missing extension manifest')
     if extension is not None:
         extension_value=json.loads(extension)
         if extension_value.get('standardManifestVersion')!=EDITION:raise ValueError('extension manifest edition differs')
         schema_check(extension_value, standard / 'local_extension_manifest.schema.json')
-        if 'local_extension_manifest.json' not in master.decode(): raise ValueError('Master must reference supplied extension manifest')
+        if 'local_extension_manifest.json' not in master_refs: raise ValueError('Master must reference supplied extension manifest')
         if b'org.example.project' in extension: raise ValueError('example extension is not a project fact')
     upstream = {name: read(suite / name) for name in SUITE_FILES}
     closure = json.loads(upstream['suite_version_closure.json']);tooling = json.loads(upstream['suite.tooling_lock.json'])
     if closure['standardVersion'] != EDITION or closure['standardManifestVersion'] != EDITION: raise ValueError('Suite closure edition differs')
     resources = resource_manifest(cadence)
     prefix = 'tooling/das/suite/'
-    derived = json.loads(json.dumps(closure));derived['$schema'] = '../standard/suite_version_closure.schema.json'
+    derived = json.loads(json.dumps(closure));derived['$schema'] = 'standard/suite_version_closure.schema.json'
     derived['suiteLockRef'] = file_ref(prefix+'suite_lock.json')
     derived['lockRefs'] = dict(suiteToolingLock=file_ref(prefix+'suite.tooling_lock.json'), repoToolingLock=file_ref('tooling_lock.json'))
     lock = dict(schemaVersion='1.0.0', standardManifestVersion=EDITION,
@@ -352,6 +366,10 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
                 verifyRuntime=closure['refs']['verifyRuntime'], suiteVersionClosureRef=file_ref('tooling/das/suite_version_closure.json'),
                 suiteLockRef=derived['suiteLockRef'], verifyRegistryRef=file_ref(VENDOR+'/cadence-registry/registry.json'),
                 toolchain=[dict(name='python3', version='>=3.10'), dict(name='git', version='>=2.30')])
+    lock['mirrors']=[dict(kind='standard_local_copy',path='tooling/das/standard',
+                          sourceOfTruth=closure['refs']['standard']['uri'],
+                          mirrorPurpose='Selected pinned templates and schemas for offline scaffold checks',
+                          localModificationsAllowed=False,snapshotRef=closure['refs']['standard'])]
     registry = load(cadence / 'cadence-registry/registry.json')
     policies = [e['id'] for e in registry['entries'] if e['kind']=='policyPack' and e['id']=='scaffold-v15']
     if not policies: raise ValueError('selected Cadence does not include scaffold-v15 metadata for its existing core checks')
@@ -378,10 +396,12 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
             target = staged/prefix/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
         shutil.copytree(suite/'schemas', staged/prefix/'schemas')
         standard_dir=staged/'tooling/das/standard';standard_dir.mkdir(parents=True)
-        for name in set(SCHEMAS.values()) | {'standard_manifest.json','template_catalog.json'}:
-            (standard_dir/name).write_bytes(read(standard/name))
-        # Keep the exact authors used for offline document-structure verification.
-        for kind, author in authors.items(): (standard_dir/(kind+'.md')).write_text(author)
+        standard_files=set(SCHEMAS.values()) | {'standard_manifest.json','template_catalog.json','standard_manifest.schema.json','template_catalog.schema.json'} | {e['artifactPath'] for e in entries.values()}
+        standard_digests={}
+        for name in sorted(standard_files):
+            data=read(local(standard,name));target=standard_dir/name
+            target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
+            standard_digests[name]=digest(data)
         write_json(staged/'tooling/das/suite_version_closure.json', derived)
         write_json(staged/'tooling_lock.json', lock)
         (staged/'cadence.yaml').write_text(yaml.safe_dump(native,sort_keys=False))
@@ -393,6 +413,7 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
         (staged/'STANDARD_REF.md').write_text('# Governing Standard\n\nDAS '+EDITION+'\n\n'+json.dumps(closure['refs']['standard'],sort_keys=True)+'\n')
         state=dict(standardRelease=EDITION, projectId=fields['Project slug'], interactionProfile=profile,
                    documents={kind:path for kind,(path,_) in documents.items()}, selectedSources=selected,
+                   standardFileDigests=standard_digests,
                    nativeSchemaDigest=digest(read(cadence/'cadence-core/internal/config/config.schema.json')),
                    resourceDigests=resources, documentAuthors={kind:digest(author.encode()) for kind,author in authors.items()})
         write_json(staged/STATE,state)
@@ -430,11 +451,15 @@ def verify(root, scope='scaffold'):
         state=load(root/STATE)
         if state['standardRelease']!=EDITION: raise ValueError('unsupported scaffold edition')
         base=root/'tooling/das/standard'
-        authors={kind:read(base/(kind+'.md')).decode() for kind in state['documentAuthors']}
+        for name,expected in state['standardFileDigests'].items():
+            if digest(read(local(base,name)))!=expected:raise ValueError('Standard mirror changed: '+name)
+        catalog=load(base/'template_catalog.json')
+        authors={e['docType']:author_section(e,read(local(base,e['artifactPath']))) for e in catalog['templates']}
         for kind,author in authors.items():
             if digest(author.encode())!=state['documentAuthors'][kind]:raise ValueError('template author changed: '+kind)
         manifest=load(base/'standard_manifest.json')
         docs=state['documents'];master=read(local(root,docs['master_doc']));fields,_=document_check('master_doc',master,authors,manifest=manifest)
+        master_refs=document_prose(master.decode())
         required={'headless_surface_note'} if fields['Interaction profile']=='headless' else {'ui_spec'}
         if fields['Conformance profile']=='L2':required.add('context_pack')
         if not required<=set(docs):raise ValueError('missing conditional documents')
@@ -442,7 +467,7 @@ def verify(root, scope='scaffold'):
             raise ValueError('document identity differs from scaffold configuration')
         identifiers=set()
         for kind,path in docs.items():
-            if kind!='master_doc' and path not in master.decode():raise ValueError('Master does not reference '+path)
+            if kind!='master_doc' and path not in master_refs:raise ValueError('Master does not reference '+path)
             doc_fields,items=document_check(kind,read(local(root,path)),authors,project=state['projectId'],master_profile=state['interactionProfile'],manifest=manifest)
             if doc_fields['Doc ID'] in identifiers:raise ValueError('duplicate document identity')
             identifiers.add(doc_fields['Doc ID'])
@@ -451,8 +476,8 @@ def verify(root, scope='scaffold'):
             extension_value=load(root/'local_extension_manifest.json')
             if extension_value.get('standardManifestVersion')!=EDITION:raise ValueError('extension manifest edition differs')
             schema_check(extension_value,base/'local_extension_manifest.schema.json')
-            if 'local_extension_manifest.json' not in master.decode():raise ValueError('extension manifest is not referenced')
-        elif 'local_extension_manifest.json' in master.decode():raise ValueError('referenced extension manifest missing')
+            if 'local_extension_manifest.json' not in master_refs:raise ValueError('extension manifest is not referenced')
+        elif 'local_extension_manifest.json' in master_refs:raise ValueError('referenced extension manifest missing')
         upstream=root/'tooling/das/suite'
         for name in SUITE_FILES:
             if digest(read(upstream/name))!=state['selectedSources']['suiteFiles'][name]:raise ValueError('Suite original changed: '+name)
@@ -466,6 +491,8 @@ def verify(root, scope='scaffold'):
         if lock['suiteLockRef']!=derived['suiteLockRef'] or lock['suiteVersionClosureRef']!=file_ref('tooling/das/suite_version_closure.json'):
             raise ValueError('product closure paths differ')
         for value in [derived['suiteLockRef'],*derived['lockRefs'].values(),lock['suiteVersionClosureRef']]:read(local(root,value))
+        mirrors=lock.get('mirrors',[])
+        if len(mirrors)!=1 or mirrors[0].get('snapshotRef')!=original['refs']['standard'] or mirrors[0].get('localModificationsAllowed') is not False or mirrors[0].get('path')!='tooling/das/standard':raise ValueError('Standard mirror source declaration differs')
         if lock['standardManifestVersion']!=derived['standardManifestVersion']:raise ValueError('product lock edition differs')
         if lock['verifyRuntime']!=derived['refs']['verifyRuntime']:raise ValueError('runtime identity differs')
         source=lock['sourceOfTruth']
