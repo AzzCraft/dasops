@@ -43,6 +43,34 @@ class TestVendorLock(unittest.TestCase):
             self.assertEqual(len(drifts), 1)
             self.assertIn("not found", drifts[0])
 
+    def test_v15_enforcement_binds_lock_and_reports_observer_failures(self):
+        import subprocess
+        from unittest.mock import patch
+
+        runtime = {"kind": "git", "uri": "https://github.com/AzzCraft/cadence-oss.git",
+                   "pinType": "commit", "pinValue": "a" * 40, "floating": False}
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".dasops-scaffold.json").write_text(json.dumps({"selectedSources": {"runtime": runtime}}))
+            lock = {"standardManifestVersion": "1.5.0-beta.1", "verifyRuntime": runtime}
+            lock_path = root / "tooling_lock.json"
+            lock_path.write_text(json.dumps(lock))
+            # The installed observer is independently exercised by native integration;
+            # this unit check proves it cannot substitute for comparing the input lock.
+            with patch("dasops.scaffold_v15.installed") as observer:
+                self.assertEqual(enforce_vendor_lock(root), [])
+                observer.assert_called_once_with(root)
+                observer.reset_mock()
+                for changed in ({**runtime, "pinValue": "b" * 40},
+                                {**runtime, "uri": "https://github.com/AzzCraft/other.git"}, None):
+                    with self.subTest(runtime=changed):
+                        lock_path.write_text(json.dumps({**lock, "verifyRuntime": changed}))
+                        self.assertIn("differs from selected Suite runtime", enforce_vendor_lock(root)[0])
+                        observer.assert_not_called()
+            lock_path.write_text(json.dumps(lock))
+            with patch("dasops.scaffold_v15.installed", side_effect=subprocess.TimeoutExpired("cadence", 10)):
+                self.assertTrue(enforce_vendor_lock(root))
+
 
 if __name__ == "__main__":
     unittest.main()

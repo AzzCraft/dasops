@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -84,11 +85,15 @@ def enforce_vendor_lock(repo_root: str | Path) -> list[str]:
         return ["tooling_lock.json not found"]
     vendor_lock = load_vendor_lock(lock_path)
     if vendor_lock.get("standardManifestVersion") == "1.5.0-beta.1":
-        from .scaffold_v15 import installed as check_installed
+        from .scaffold_v15 import STATE, installed as check_installed, load
         try:
-            check_installed(Path(repo_root).resolve())
+            root = Path(repo_root).resolve()
+            selected_runtime = load(root / STATE)["selectedSources"]["runtime"]
+            if vendor_lock.get("verifyRuntime") != selected_runtime:
+                return ["tooling_lock.json verifyRuntime differs from selected Suite runtime"]
+            check_installed(root)
             return []
-        except (ValueError, OSError, KeyError, TypeError) as exc:
+        except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as exc:
             return [str(exc)]
     installed = _detect_installed(repo_root)
     return validate_vendor_integrity(vendor_lock, installed)
