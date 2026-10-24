@@ -230,6 +230,20 @@ def document_prose(text):
     return '\n'.join(rows)
 
 
+def document_references(text):
+    """Read whole local paths from prose/code spans and Markdown link targets."""
+    text = document_prose(text)
+    paths = []
+    def link(match):
+        # Labels do not establish a reference to a different link destination.
+        target = match[1].strip()
+        if target: paths.append(target.split()[0].strip('<>'))
+        return ' '
+    text = re.sub(r'!?\[[^\]\n]*\]\(([^)\n]*)\)', link, text)
+    paths.extend(re.findall(r'''(?<![\w./%+~:-])(?:docs/[^\s`<>()\[\]"',;*]+|local_extension_manifest\.json[^\s`<>()\[\]"',;*]*)''', text))
+    return {path.rstrip('.:!').split('#', 1)[0] for path in paths}
+
+
 def document_check(kind, data, authors, *, project=None, master_profile=None, manifest=None):
     text = document_prose(data.decode('utf-8')); fields = metadata(text)
     required = manifest['requiredDocMetadata'][kind] if manifest is not None else ('Doc ID', 'Owner', 'Status', 'Governing standard')
@@ -266,8 +280,13 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
     author = authors[kind]
     if kind in ('headless_surface_note', 'context_pack'):
         markers=set(re.findall(r'<([^<>\n]+)>', author))
-        if any(line.strip() in {'<'+marker+'>' for marker in markers} for line in text.splitlines()):
-            raise ValueError(kind + ': Appendix M still contains unfilled required values')
+        section = 'Document Control'
+        for line in text.splitlines():
+            if re.match(r'^#{1,6}\s+', line): section = line.lstrip('# ').strip()
+            value = re.sub(r'^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?', '', line).strip().strip('`*_~').strip()
+            marker = re.fullmatch(r'<([^<>\n]+)>', value)
+            if marker and marker[1] in markers:
+                raise ValueError(kind + ': Appendix M still contains unfilled required values in ' + section + ': ' + value)
     actual_headings=headings(text)
     marker=r'(\{\{[^{}\n]+\}\}|\[\[[^\[\]\n]+\]\])'
     def matches_heading(template):
@@ -362,7 +381,7 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     standard_data.update(source_snapshot(standard, sorted(standard_files), pins['das-standard']))
     authors = {kind: author_section(e, standard_data[e['artifactPath']][0]) for kind,e in entries.items()}
     master = read(master_doc_path); fields, _ = document_check('master_doc', master, authors, manifest=manifest)
-    master_refs=document_prose(master.decode())
+    master_refs=document_references(master.decode())
     profile = fields['Interaction profile']; documents = {'master_doc': ('docs/master_doc.md', master)}
     inputs = {'ui_spec': ui_spec_path, 'headless_surface_note': headless_note_path, 'context_pack': context_pack_path}
     required = required_documents(fields, master_refs)
@@ -526,7 +545,7 @@ def verify(root, scope='scaffold'):
             if digest(author.encode())!=state['documentAuthors'][kind]:raise ValueError('template author changed: '+kind)
         manifest=load(base/'standard_manifest.json')
         docs=state['documents'];master=read(local(root,docs['master_doc']));fields,_=document_check('master_doc',master,authors,manifest=manifest)
-        master_refs=document_prose(master.decode())
+        master_refs=document_references(master.decode())
         required=required_documents(fields, master_refs)
         if not required<=set(docs):raise ValueError('missing conditional documents')
         if fields['Interaction profile']!=state['interactionProfile'] or fields['Project slug']!=state['projectId']:
