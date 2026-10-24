@@ -742,7 +742,9 @@ def verify(root, scope='scaffold'):
                 run_frontend(root)
                 checks.append(dict(name='product-frontend-command',status='passed',command='scripts/verify-frontend'))
             result=subprocess.run([str(installed(root)),'verify','--profile','dev'],cwd=root,capture_output=True,text=True,check=False)
-            if result.returncode:raise ValueError('native core verification failed: '+result.stderr.strip())
+            if result.returncode:
+                detail='\n'.join(part.strip() for part in (result.stdout,result.stderr) if part.strip())
+                raise ValueError(f'native core verification failed (exit {result.returncode}): '+detail)
             checks.append(dict(name='native-core',status='passed',policyMetadataOnly=True))
     except (ValueError,OSError,KeyError,TypeError,subprocess.SubprocessError,yaml.YAMLError) as exc:problems.append(str(exc))
     return dict(ok=not problems,scope=scope,problems=problems,pendingItems=pending,checks=checks,toolchain=toolchain,
@@ -754,7 +756,9 @@ def run_frontend(root):
     read(command)
     if not os.access(command,os.X_OK):raise ValueError('product frontend command is not executable')
     result=subprocess.run([str(command)],cwd=root,capture_output=True,text=True,timeout=300,check=False)
-    if result.returncode:raise ValueError('product frontend checks failed: '+result.stderr.strip())
+    if result.returncode:
+        detail='\n'.join(part.strip() for part in (result.stdout,result.stderr) if part.strip())
+        raise ValueError(f'product frontend checks failed (exit {result.returncode}): '+detail)
 
 
 def installed(root):
