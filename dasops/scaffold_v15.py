@@ -97,6 +97,83 @@ def file_ref(path):
     return dict(kind='file', uri=path, pinType='manifest', pinValue=path, floating=False)
 
 
+def product_manual(template, document_paths, has_extensions):
+    """Keep shared workflow guidance, with this product's paths and 1.5 commands."""
+    before, marker, rest = template.partition('- System truth\n')
+    _, change_marker, rest = rest.partition('- Change truth\n')
+    shared, cadence_marker, _ = rest.partition('Section 5. Cadence integration\n')
+    if not (marker and change_marker and cadence_marker):
+        raise ValueError('product manual template sections are missing')
+    paths = [*document_paths, 'STANDARD_REF.md', 'tooling_lock.json']
+    if has_extensions:
+        paths.append('local_extension_manifest.json')
+    return (before + marker + ''.join('  - `' + path + '`\n' for path in paths)
+            + change_marker + shared + '''Section 5. Cadence integration
+
+This product uses DAS Standard 1.5.0-beta.1 and fixed Suite sources.
+The document list above reflects this project's actual inputs. Headless and
+mixed surfaces require their Surface Note; L2 requires its Context Pack.
+An extension manifest is present only when real local extensions were supplied.
+
+Check the generated structure before installation, from the product root:
+
+```bash
+./scripts/verify --scope scaffold
+```
+
+A successful scaffold check may still report pending document fields, toolchain
+differences or an uninstalled runtime. It is not full verification or approval.
+
+Install the fixed Cadence runtime:
+
+```bash
+./scripts/install_cadence_vendor.sh --from-suite /path/to/validated-suite-workspace
+```
+
+Use the same selected Suite combination, with clean, locked modules synchronized
+under its workspace. Installation reads Suite report's resolvedPath for the
+selected module; it does not assume a sibling release directory or clone a tip.
+The supported runtime path is Linux source building and requires Go, Git and
+the declared Python dependencies. Source SHA, binary digest, version and resource
+digests are checked. This installs the binary and selected resources, not a full
+Cadence source checkout with its development verification scripts.
+
+To replace an existing installation explicitly, add --force to the same command.
+A failed build or replacement retains the prior installation; if automatic
+restoration fails, the error identifies the preserved directory to recover.
+The created project remains available when installation fails.
+
+Inspect and run the installed binary:
+
+```bash
+./cadencew version --json
+./cadencew doctor
+./cadencew verify --profile dev
+```
+
+The wrapper checks the fixed binary and resources on each invocation and never
+falls back to another cadence on PATH. Doctor may create .cadence/tmp. Native
+verification writes evidence under .cadence/out; a core pass covers only its
+implemented checks, not full DAS conformance.
+
+Run the product's complete configured checks:
+
+```bash
+./scripts/verify
+```
+
+The default full scope requires completed documents, matching locked toolchain
+versions and the installed runtime. UI and mixed products also require a working
+scripts/verify-frontend supplied by the product author. The generated frontend
+script exits 1 until real product tests replace it; it does not perform visual
+comparisons or accept screenshot files as proof. Full selects this command from
+the actual UI document set, independently of the native ui.enabled setting.
+Headless products do not require that UI command. Failed or unexecuted required
+checks cannot produce an overall full pass. Creation and verification never
+grant adoption approval or reference qualification.
+''')
+
+
 def git(root, *args):
     proc = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=30)
     if proc.returncode:
@@ -525,7 +602,9 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
         (staged/'VERIFY_REQUIREMENTS.md').write_text('# Product verification scope\n\n`./scripts/verify --scope scaffold` checks generated structure, documents and fixed sources.\n`./scripts/verify` also requires completed documents, an installed fixed runtime and applicable product checks.\nThe current core scanner does not execute UI tests or certify complete DAS conformance.\n')
         (staged/'README.md').write_text('# DAS '+EDITION+' product scaffold\n\nCanonical documents:\n'+''.join('- '+path+'\n' for path,_ in documents.values())+'\nRun `./scripts/verify --scope scaffold` before runtime installation.\nInstall from the selected fixed Suite with `./scripts/install_cadence_vendor.sh --from-suite /path/to/suite`.\nThen run `./cadencew doctor` and `./cadencew verify --profile dev`.\nDefault `./scripts/verify` fails when documents, the runtime or an applicable UI runner are unfinished.\nCreation does not grant approval or certify full DAS conformance.\n')
         manual=staged/'docs/USER_MANUAL.md'
-        manual.write_text(manual.read_text().replace('The default Factory seed retains its legacy 1.4 configuration.', 'This generated product uses an explicit 1.5 configuration and fixed Suite sources.'))
+        manual.write_text(product_manual(manual.read_text(),
+                          [path for path,_ in documents.values()],
+                          (staged/'local_extension_manifest.json').is_file()))
         (staged/'STANDARD_REF.md').write_text('# Governing Standard\n\nDAS '+EDITION+'\n\n'+json.dumps(closure['refs']['standard'],sort_keys=True)+'\n')
         state=dict(standardRelease=EDITION, projectId=fields['Project slug'], interactionProfile=profile,
                    documents={kind:path for kind,(path,_) in documents.items()}, selectedSources=selected,
