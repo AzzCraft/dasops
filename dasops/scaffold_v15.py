@@ -31,6 +31,10 @@ SCHEMAS = {'suite_lock.json': 'suite_lock.schema.json',
            'tooling_lock.json': 'tooling_lock.schema.json',
            'local_extension_manifest.json': 'local_extension_manifest.schema.json'}
 VENDOR = 'vendor/cadence/cadence-oss'
+CHANGE_TEMPLATES = ('master_doc_delta.md', 'contracts_plan.md', 'verification_plan.md', 'tasks.md')
+ENTRY_FILES = ('STANDARD_REF.md', '.dasops_product_repo', 'openspec/config.yaml',
+               'openspec/schemas/das-standard/schema.yaml', 'scripts/das_scaffold.py',
+               'scripts/verify', 'scripts/install_cadence_vendor.sh', 'cadencew')
 
 
 class PublicationRecoveryRequired(RuntimeError):
@@ -81,8 +85,8 @@ def local(root, ref):
     return path
 
 
-def schema_check(value, schema_path):
-    schema = load(schema_path)
+def schema_check(value, schema_path, schema=None):
+    if schema is None: schema = load(schema_path)
     Draft202012Validator.check_schema(schema)
     errors = list(Draft202012Validator(schema, registry=Registry(), format_checker=FormatChecker()).iter_errors(value))
     if errors: raise ValueError(schema_path.name + ': ' + errors[0].message)
@@ -126,34 +130,57 @@ def suite_inputs(suite):
     return suite, {k: Path(v['resolvedPath']) for k, v in modules.items()}, report
 
 
-def code_identity(factory, resources):
+def source_snapshot(root, paths, revision):
+    """Read selected Git files once and bind those bytes to the selected commit."""
+    result = {}
+    tree = git(root, 'ls-tree', '-r', '-z', revision, '--', *paths)
+    for row in tree.split('\0'):
+        if not row: continue
+        info, name = row.split('\t', 1)
+        mode, kind, expected = info.split()
+        if kind != 'blob' or mode not in ('100644', '100755'):
+            raise ValueError('regular source file required: ' + name)
+        data = read(local(root, name))
+        # This is Git's object identifier, not a cryptographic trust decision.
+        blob = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data, usedforsecurity=False).hexdigest()
+        if blob != expected: raise ValueError('source changed from selected commit: ' + name)
+        result[name] = (data, int(mode, 8) & 0o777)
+    if not result: raise ValueError('selected source files missing')
+    return result
+
+
+def write_snapshot(root, files):
+    for name, (data, mode) in files.items():
+        target = local(root, name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        target.chmod(mode)
+
+
+def code_identity(factory, resources, revision):
     """Bind loaded code AND templates to the fixed Suite factory, including wheels."""
     actual = Path(__file__).resolve().parent
-    expected = factory / 'dasops'
-    observed = {}
-    for base, installed in ((expected, actual), (factory / 'templates', resources / 'templates')):
-        files = [p for p in base.rglob('*') if p.is_file() and '__pycache__' not in p.parts
-                 and (base.name == 'templates' or p.suffix in ('.py', '.json', '.sql'))]
-        for path in files:
-            rel = path.relative_to(base)
-            target = installed / rel
-            if read(target) != read(path):
-                raise ValueError('executing factory code/resources differ from Suite: ' + str(rel))
-            observed[str(path.relative_to(factory))] = digest(read(target))
-    return digest(json.dumps(observed, sort_keys=True).encode())
+    observed = {}; templates = {}
+    files = source_snapshot(factory, ['dasops', 'templates'], revision)
+    for name, (data, mode) in files.items():
+        path = Path(name)
+        if path.parts[0] == 'templates':
+            target = local(resources, name)
+            if path.parts[:2] == ('templates', 'das-product'):
+                templates[str(path.relative_to('templates/das-product'))] = (data, mode)
+        elif path.suffix in ('.py', '.json', '.sql'):
+            target = local(actual, str(path.relative_to('dasops')))
+        else: continue
+        if read(target) != data:
+            raise ValueError('executing factory code/resources differ from Suite: ' + name)
+        observed[name] = digest(data)
+    return digest(json.dumps(observed, sort_keys=True).encode()), templates, files['dasops/scaffold_v15.py'][0]
 
 
 def metadata(text):
     result = {}
-    fence = None
     control_level = None
-    for line in text.splitlines():
-        mark = re.match(r'^\s*(`{3,}|~{3,})', line)
-        if mark:
-            if fence is None: fence = mark[1][0]
-            elif fence == mark[1][0]: fence = None
-            continue
-        if fence is not None: continue
+    for line in document_prose(text).splitlines():
         heading = re.match(r'^(#{1,6})\s+(.+)', line)
         if heading:
             if 'document control' in heading[2].lower(): control_level = len(heading[1])
@@ -171,15 +198,7 @@ def metadata(text):
 
 
 def headings(text):
-    result = []; fence = None
-    for line in text.splitlines():
-        mark = re.match(r'^\s*(`{3,}|~{3,})', line)
-        if mark:
-            if fence is None: fence = mark[1][0]
-            elif fence == mark[1][0]: fence = None
-            continue
-        if fence is None and re.match(r'^#{1,6}\s+', line): result.append(line.strip())
-    return result
+    return [line.strip() for line in document_prose(text).splitlines() if re.match(r'^#{1,6}\s+', line)]
 
 
 def author_section(entry, source):
@@ -198,9 +217,10 @@ def author_section(entry, source):
 
 
 def document_prose(text):
-    """Exclude fenced examples and comments from document-reference decisions."""
+    """Visible Markdown for metadata, headings, pending fields and references."""
     rows=[];fence=None
-    for line in re.sub(r'<!--.*?-->','',text,flags=re.S).splitlines():
+    text = re.sub(r'<!--.*?(?:-->|\Z)', lambda m: '\n' * m[0].count('\n'), text, flags=re.S)
+    for line in text.splitlines():
         mark=re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$',line)
         if mark:
             if fence is None:fence=mark[1]
@@ -211,7 +231,7 @@ def document_prose(text):
 
 
 def document_check(kind, data, authors, *, project=None, master_profile=None, manifest=None):
-    text = data.decode('utf-8'); fields = metadata(text)
+    text = document_prose(data.decode('utf-8')); fields = metadata(text)
     required = manifest['requiredDocMetadata'][kind] if manifest is not None else ('Doc ID', 'Owner', 'Status', 'Governing standard')
     for key in required:
         if not fields.get(key) or re.search(r'\{\{|\[\[|<[^>]+>', fields[key]):
@@ -257,24 +277,24 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
     missing = [h for h in headings(author) if not matches_heading(h)]
     if missing: raise ValueError(kind + ': missing template section: ' + missing[0])
     # Fenced examples and syntax descriptions do not become unfinished project fields.
-    prose=[]; fence=None
-    for line in text.splitlines():
-        if re.match(r'^\s*(`{3,}|~{3,})', line): fence = None if fence else line.lstrip()[0];continue
-        if fence is None and not any(x in line for x in ('REQUIRED_PLACEHOLDER', 'OPTIONAL_PLACEHOLDER')): prose.append(line)
+    prose=[line for line in text.splitlines() if not any(x in line for x in ('REQUIRED_PLACEHOLDER', 'OPTIONAL_PLACEHOLDER'))]
     pending = sorted(set(re.findall(r'\{\{([^{}\n]+)\}\}', '\n'.join(prose))))
     if fields['Status'] != 'draft' and pending: raise ValueError(kind + ': active/frozen document has unfilled required fields')
     return fields, pending
 
 
-def resource_manifest(cadence):
-    registry = load(cadence / 'cadence-registry/registry.json')
+def resource_manifest(cadence, snapshot=None):
+    def content(name): return read(local(cadence, name)) if snapshot is None else snapshot[name][0]
+    registry_data = content('cadence-registry/registry.json')
+    registry = json.loads(registry_data)
     if not registry.get('registryId') or not isinstance(registry.get('entries'), list): raise ValueError('native registry required')
-    resources = {'cadence-registry/registry.json': digest(read(cadence / 'cadence-registry/registry.json'))}
+    resources = {'cadence-registry/registry.json': digest(registry_data)}
     for entry in registry['entries']:
         path = (cadence / 'cadence-registry' / entry['ref']).resolve()
         if not path.is_relative_to(cadence.resolve()): raise ValueError('registry target escapes Cadence')
-        if digest(read(path)) != entry['digest']: raise ValueError('registry target digest differs: ' + entry['id'])
-        resources[str(path.relative_to(cadence.resolve()))] = entry['digest']
+        name = str(path.relative_to(cadence.resolve()))
+        if digest(content(name)) != entry['digest']: raise ValueError('registry target digest differs: ' + entry['id'])
+        resources[name] = entry['digest']
     return resources
 
 
@@ -330,13 +350,17 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     for source in (suite, *modules.values(), Path(factory_root).resolve()):
         if source == resolved_destination or source.is_relative_to(resolved_destination) or resolved_destination.is_relative_to(source):
             raise ValueError('destination must be separate from source resources')
-    identity = code_identity(modules['dasops'], Path(factory_root))
+    pins = {row['id']: row['expectedPinValue'] for row in report['modules']}
+    identity, templates, helper = code_identity(modules['dasops'], Path(factory_root), pins['dasops'])
     standard = modules['das-standard']; cadence = modules['cadence-oss']
-    if read(standard / 'VERSION').decode().strip() != EDITION: raise ValueError('Suite does not select Standard ' + EDITION)
-    manifest = load(standard / 'standard_manifest.json');catalog = load(standard / 'template_catalog.json')
+    standard_data = source_snapshot(standard, ['VERSION', 'standard_manifest.json', 'template_catalog.json'], pins['das-standard'])
+    if standard_data['VERSION'][0].decode().strip() != EDITION: raise ValueError('Suite does not select Standard ' + EDITION)
+    manifest = json.loads(standard_data['standard_manifest.json'][0]);catalog = json.loads(standard_data['template_catalog.json'][0])
     if manifest.get('standardVersion') != EDITION or catalog.get('standardVersion') != EDITION: raise ValueError('Standard catalog/manifest edition mismatch')
     entries = {e['docType']: e for e in catalog['templates']}
-    authors = {kind: author_section(e, read(local(standard, e['artifactPath']))) for kind,e in entries.items()}
+    standard_files=set(SCHEMAS.values()) | {'standard_manifest.schema.json','template_catalog.schema.json'} | {e['artifactPath'] for e in entries.values()}
+    standard_data.update(source_snapshot(standard, sorted(standard_files), pins['das-standard']))
+    authors = {kind: author_section(e, standard_data[e['artifactPath']][0]) for kind,e in entries.items()}
     master = read(master_doc_path); fields, _ = document_check('master_doc', master, authors, manifest=manifest)
     master_refs=document_prose(master.decode())
     profile = fields['Interaction profile']; documents = {'master_doc': ('docs/master_doc.md', master)}
@@ -355,13 +379,26 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     if extension is not None:
         extension_value=json.loads(extension)
         if extension_value.get('standardManifestVersion')!=EDITION:raise ValueError('extension manifest edition differs')
-        schema_check(extension_value, standard / 'local_extension_manifest.schema.json')
+        schema_check(extension_value, standard / 'local_extension_manifest.schema.json',
+                     json.loads(standard_data['local_extension_manifest.schema.json'][0]))
         if 'local_extension_manifest.json' not in master_refs: raise ValueError('Master must reference supplied extension manifest')
         if b'org.example.project' in extension: raise ValueError('example extension is not a project fact')
-    upstream = {name: read(suite / name) for name in SUITE_FILES}
+    suite_commit = git(suite, 'rev-parse', 'HEAD')
+    suite_data = source_snapshot(suite, [*SUITE_FILES, 'schemas'], suite_commit)
+    upstream = {name: suite_data[name][0] for name in SUITE_FILES}
     closure = json.loads(upstream['suite_version_closure.json']);tooling = json.loads(upstream['suite.tooling_lock.json'])
     if closure['standardVersion'] != EDITION or closure['standardManifestVersion'] != EDITION: raise ValueError('Suite closure edition differs')
-    resources = resource_manifest(cadence)
+    for key, name in [('standard','das-standard'), ('factory','dasops'), ('verifyRuntime','cadence-oss')]:
+        if closure['refs'][key]['pinValue'] != pins[name]: raise ValueError('Suite selection changed during creation')
+    native_data = source_snapshot(cadence, ['cadence-registry/registry.json', 'cadence-core/internal/config/config.schema.json'], pins['cadence-oss'])
+    registry = json.loads(native_data['cadence-registry/registry.json'][0])
+    targets = []
+    for entry in registry['entries']:
+        target = (cadence / 'cadence-registry' / entry['ref']).resolve()
+        if not target.is_relative_to(cadence.resolve()): raise ValueError('registry target escapes Cadence')
+        targets.append(str(target.relative_to(cadence.resolve())))
+    native_data.update(source_snapshot(cadence, targets, pins['cadence-oss']))
+    resources = resource_manifest(cadence, native_data)
     prefix = 'tooling/das/suite/'
     derived = json.loads(json.dumps(closure));derived['$schema'] = 'standard/suite_version_closure.schema.json'
     derived['suiteLockRef'] = file_ref(prefix+'suite_lock.json')
@@ -375,42 +412,40 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
                           sourceOfTruth=closure['refs']['standard']['uri'],
                           mirrorPurpose='Selected pinned templates and schemas for offline scaffold checks',
                           localModificationsAllowed=False,snapshotRef=closure['refs']['standard'])]
-    registry = load(cadence / 'cadence-registry/registry.json')
     policies = [e['id'] for e in registry['entries'] if e['kind']=='policyPack' and e['id']=='scaffold-v15']
     if not policies: raise ValueError('selected Cadence does not include scaffold-v15 metadata for its existing core checks')
     native = dict(projectId=fields['Project slug'], mode='strict_offline', closureRef='tooling/das/suite_version_closure.json',
                   toolingLock='tooling_lock.json', runtimeRef=VENDOR+'/cadence-sandbox/runtime_profile.json',
                   registryRef=VENDOR+'/cadence-registry/registry.json', sandboxRef=VENDOR+'/cadence-sandbox/sandbox_profile.json',
                   policies=policies, ui=dict(enabled=False))
-    selected = dict(suiteCommit=git(suite, 'rev-parse', 'HEAD'), factoryCodeDigest=identity,
+    selected = dict(suiteCommit=suite_commit, factoryCodeDigest=identity,
                     runtime=closure['refs']['verifyRuntime'], suiteFiles={k:digest(v) for k,v in upstream.items()})
     destination.parent.mkdir(parents=True, exist_ok=True)
     directory=tempfile.mkdtemp(prefix='.dasops-create-', dir=destination.parent)
     preserve=False
     try:
-        staged = Path(directory) / 'repo';shutil.copytree(Path(factory_root)/'templates/das-product', staged)
+        staged = Path(directory) / 'repo';staged.mkdir();write_snapshot(staged, templates)
         # Adapt only factory-owned guidance, before importing user documents.
         if profile == 'headless' and 'ui_spec' not in documents:
             for guidance in staged.rglob('*.md'):
                 guidance.write_text(guidance.read_text().replace('docs/ui_spec.md','docs/headless_surface_note.md'))
+        delta=staged/'openspec/schemas/das-standard/templates/master_doc_delta.md'
+        delta.write_text(delta.read_text().replace('./scripts/verify --mode backend','./scripts/verify'))
         (staged / 'docs/ui_spec.md').unlink(missing_ok=True)
         (staged / 'local_extension_manifest.json').unlink(missing_ok=True)
         for path,data in documents.values(): (staged / path).write_bytes(data)
         if extension is not None: (staged/'local_extension_manifest.json').write_bytes(extension)
         for name,data in upstream.items():
             target = staged/prefix/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
-        shutil.copytree(suite/'schemas', staged/prefix/'schemas')
+        write_snapshot(staged/prefix, {name:value for name,value in suite_data.items() if name.startswith('schemas/')})
         standard_dir=staged/'tooling/das/standard';standard_dir.mkdir(parents=True)
-        standard_files=set(SCHEMAS.values()) | {'standard_manifest.json','template_catalog.json','standard_manifest.schema.json','template_catalog.schema.json'} | {e['artifactPath'] for e in entries.values()}
-        standard_digests={}
-        for name in sorted(standard_files):
-            data=read(local(standard,name));target=standard_dir/name
-            target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
-            standard_digests[name]=digest(data)
+        write_snapshot(standard_dir, standard_data)
+        standard_digests={name:digest(value[0]) for name,value in standard_data.items()}
         write_json(staged/'tooling/das/suite_version_closure.json', derived)
         write_json(staged/'tooling_lock.json', lock)
         (staged/'cadence.yaml').write_text(yaml.safe_dump(native,sort_keys=False))
-        (staged/'tooling/das/native-config.schema.json').write_bytes(read(cadence/'cadence-core/internal/config/config.schema.json'))
+        native_schema=native_data['cadence-core/internal/config/config.schema.json'][0]
+        (staged/'tooling/das/native-config.schema.json').write_bytes(native_schema)
         (staged/'VERIFY_REQUIREMENTS.md').write_text('# Product verification scope\n\n`./scripts/verify --scope scaffold` checks generated structure, documents and fixed sources.\n`./scripts/verify` also requires completed documents, an installed fixed runtime and applicable product checks.\nThe current core scanner does not execute UI tests or certify complete DAS conformance.\n')
         (staged/'README.md').write_text('# DAS '+EDITION+' product scaffold\n\nCanonical documents:\n'+''.join('- '+path+'\n' for path,_ in documents.values())+'\nRun `./scripts/verify --scope scaffold` before runtime installation.\nInstall from the selected fixed Suite with `./scripts/install_cadence_vendor.sh --from-suite /path/to/suite`.\nThen run `./cadencew doctor` and `./cadencew verify --profile dev`.\nDefault `./scripts/verify` fails when documents, the runtime or an applicable UI runner are unfinished.\nCreation does not grant approval or certify full DAS conformance.\n')
         manual=staged/'docs/USER_MANUAL.md'
@@ -419,10 +454,10 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
         state=dict(standardRelease=EDITION, projectId=fields['Project slug'], interactionProfile=profile,
                    documents={kind:path for kind,(path,_) in documents.items()}, selectedSources=selected,
                    standardFileDigests=standard_digests,
-                   nativeSchemaDigest=digest(read(cadence/'cadence-core/internal/config/config.schema.json')),
+                   nativeSchemaDigest=digest(native_schema),
                    resourceDigests=resources, documentAuthors={kind:digest(author.encode()) for kind,author in authors.items()})
         write_json(staged/STATE,state)
-        shutil.copyfile(Path(__file__), staged/'scripts/das_scaffold.py')
+        (staged/'scripts/das_scaffold.py').write_bytes(helper)
         for name,command in [('verify','verify'),('install_cadence_vendor.sh','install')]:
             (staged/'scripts'/name).write_text('#!/usr/bin/env bash\nset -euo pipefail\nROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\nexec "${PYTHON:-python3}" -B "$ROOT/scripts/das_scaffold.py" '+command+' --repo-root "$ROOT" "$@"\n')
         (staged/'scripts/verify-frontend').write_text('#!/usr/bin/env bash\nset -euo pipefail\necho "Implement the product UI tests in scripts/verify-frontend; core checks and evidence-file presence do not execute UI tests." >&2\nexit 1\n')
@@ -450,11 +485,38 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     return destination
 
 
+def check_entry_files(root, documents):
+    required = [*ENTRY_FILES, *('openspec/schemas/das-standard/templates/'+name for name in CHANGE_TEMPLATES)]
+    executable = ['scripts/verify', 'scripts/install_cadence_vendor.sh', 'cadencew']
+    if 'ui_spec' in documents:
+        required.append('scripts/verify-frontend');executable.append('scripts/verify-frontend')
+    for name in required:
+        try: read(local(root, name))
+        except (OSError,ValueError) as exc: raise ValueError('required scaffold file missing or unreadable: '+name) from exc
+    for name in executable:
+        if not os.access(local(root, name), os.X_OK): raise ValueError('scaffold entry is not executable: '+name)
+    config=yaml.safe_load(read(root/'openspec/config.yaml'))
+    schema=yaml.safe_load(read(root/'openspec/schemas/das-standard/schema.yaml'))
+    if not isinstance(config,dict) or config.get('schema')!='das-standard' or not isinstance(config.get('context'),str):
+        raise ValueError('invalid OpenSpec config')
+    if not isinstance(schema,dict) or schema.get('name')!='das-standard' or schema.get('version')!=1:
+        raise ValueError('invalid OpenSpec schema')
+    artifacts=schema.get('artifacts',[])
+    if (not isinstance(artifacts,list) or not all(isinstance(item,dict) for item in artifacts)
+            or len(artifacts)!=len(CHANGE_TEMPLATES) or {item.get('template') for item in artifacts}!=set(CHANGE_TEMPLATES)):
+        raise ValueError('OpenSpec change templates differ')
+    instruction=next((item.get('instruction','') for item in artifacts if item.get('id')=='master-doc-delta'),'')
+    for text in (config['context'],instruction):
+        if not isinstance(text,str) or set(re.findall(r'^\s*-\s+(docs/\S+)\s*$',text,re.M))!=set(documents.values()):
+            raise ValueError('OpenSpec document context differs from actual documents')
+
+
 def verify(root, scope='scaffold'):
     root=Path(root).resolve();problems=[];pending=[];checks=[]
     try:
         state=load(root/STATE)
         if state['standardRelease']!=EDITION: raise ValueError('unsupported scaffold edition')
+        check_entry_files(root, state['documents'])
         base=root/'tooling/das/standard'
         for name,expected in state['standardFileDigests'].items():
             if digest(read(local(base,name)))!=expected:raise ValueError('Standard mirror changed: '+name)

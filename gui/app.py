@@ -165,8 +165,12 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 "- Health check: `dasops doctor`\n"
                 "- Start a task: `dasops start-task --change-id <change-id> --task-id <id>`\n"
                 "- Claim ready: `dasops claim-ready --change-id <change-id>`\n"
-                "- Verify sub-systems: `scripts/verify-backend`, `scripts/verify-frontend`\n"
-                "- Frontend gate checks matrix structure and evidence-file presence; visual comparison requires your product's actual UI tests\n"
+                + ("- Check structure: `scripts/verify --scope scaffold`; complete documents and install the fixed runtime before `scripts/verify`\n"
+                   "- UI projects must implement `scripts/verify-frontend`; the generated stub fails until real product tests are supplied\n"
+                   if standard_release == "1.5.0-beta.1" else
+                   "- Verify sub-systems: `scripts/verify-backend`, `scripts/verify-frontend`\n"
+                   "- Frontend gate checks matrix structure and evidence-file presence; visual comparison requires your product's actual UI tests\n")
+                +
                 "- Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."
             )
         except (SystemExit, RuntimeError) as e:

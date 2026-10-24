@@ -60,6 +60,16 @@ class TestV15ScaffoldInputs(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"ambiguous"):
             metadata("## Document Control\n- **Status:** draft\n- **Status:** active\n")
 
+    def test_visible_metadata_and_headings_share_fence_and_comment_rules(self):
+        from dasops.scaffold_v15 import metadata, headings, document_prose
+        text = ("<!--\n## Document Control\n- **Status:** active\n-->\n"
+                "````md\n```\n## Document Control\n- **Status:** frozen\n````\n"
+                "## Document Control\n- **Status:** draft <!-- allowed explanation -->\n"
+                "## Scope\nVisible text.\n<!-- unclosed hidden tail\n## Hidden\n")
+        self.assertEqual(metadata(text), {"Status":"draft"})
+        self.assertEqual(headings(text), ["## Document Control", "## Scope"])
+        self.assertNotIn("Hidden", document_prose(text))
+
     def test_legacy_and_unknown_vendor_formats_are_distinct(self):
         from dasops.vendor import validate_vendor_integrity
         self.assertTrue(validate_vendor_integrity({}, {}))
