@@ -2,6 +2,9 @@
 
 ## v1.2.0-beta.1 — Unreleased
 
+- Pin the build and verification backend to setuptools 84.1.0, addressing
+  GHSA-xmj3-9gf7-h52w while retaining the existing wheel backend.
+
 - Require an active matching lease before starting the generated Codex worker;
   generate its prompt before launch and clean private temporary files on exit.
 - Read status from one guarded task/lock snapshot; pending recovery is an error.
