@@ -13,7 +13,7 @@ This repository is a CLI + GUI **Factory tool** that generates DAS-aligned produ
 Recommended usage:
 
 - Clone **DAS Suite** (another repo das-suite) and let it pull this repo into `src/dasops`.
-- Use `dassuite new-product` or `python3 -m dasops create` to scaffold your product repo.
+- Use `python3 -m dasops create` to scaffold your product repo. Suite syncs the selected component sources; DASOps creates the product.
 
 Without **DAS Suite**, one can just git clone this repo to use this tool. See instructions below.
 
@@ -51,7 +51,7 @@ source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 python3 -m pip install -e .
 
-dassuite sync --tier oss
+dassuite sync --repo-root /path/to/das-suite
 ```
 
 If you are using this repo directly:
@@ -168,3 +168,38 @@ owner/token/task/gate are checked again before completion. Use a script for comp
 gates, not shell operators. `claim-task`/`claim-ready` set IN_PROGRESS only;
 `release-task` allows TODO/BLOCKED/PROPOSED, not IN_PROGRESS or DONE. Old DONE records
 are preserved without inventing verification history.
+
+### Standard 1.5 scaffold (explicit beta selection)
+
+The default `create` target remains Standard 1.4. For 1.5, use a fixed synced
+Suite combination containing this creator and the dual-lock Cadence reader:
+
+```bash
+dasops create --standard-release 1.5.0-beta.1 \
+  --from-suite /path/to/suite --dest /path/to/new-product \
+  --master-doc /path/to/master.md --headless-note /path/to/headless.md
+```
+
+The Master document declares the interaction and conformance profiles. Supply
+`--ui-spec` for UI surfaces, `--context-pack` for L2, and
+`--extension-manifest` only for real local extensions. Documents must already
+reference their output paths under `docs/`. HFVI, nonempty destination merging,
+and no-Git 1.5 creation are outside this first Linux implementation.
+
+Creation imports documents, preserves the Suite originals and creates a product
+lock. It does not install a runtime or certify project conformance. In the new
+product, run `scripts/verify --scope scaffold` for structure; install with
+`scripts/install_cadence_vendor.sh --from-suite /path/to/suite`, then use
+`./cadencew doctor` and `./cadencew verify --profile dev`. The runtime is built
+once from the fixed clean source and checked before execution. Default product
+`scripts/verify` requests the finite full scope; unfinished documents, an absent
+runtime or a required UI runner give a failure with specific pending work.
+The existing frontend evidence-file checker does not perform visual UI tests.
+
+The creator checks its loaded code and templates against the selected Suite
+factory. A package installation must include those exact resources; a matching
+version string alone is insufficient. Creation and installation failures are
+reported separately; an install failure preserves the created project and old
+runtime. Upgrading DASOps does not automatically migrate an existing 1.4 repo.
+
+For UI projects, implement the actual product tests in the generated `scripts/verify-frontend`. The initial entry fails explicitly; full verification calls it and reports its exit separately from native core checks. It must not call the top-level verify script recursively. Passing that command is not a claim that DASOps itself evaluated the UI.

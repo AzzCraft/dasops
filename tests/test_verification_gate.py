@@ -38,7 +38,7 @@ def test_verify_ci_uses_the_pinned_verification_lock_and_security_audits() -> No
     assert "-r requirements.txt" not in workflow
     requirements = (ROOT / "requirements-verify.txt").read_text(encoding="utf-8")
     assert "rfc3339-validator==0.1.4" in requirements
-    assert "setuptools==83.0.0" in requirements
+    assert "setuptools==84.1.0" in requirements
     assert "wheel==0.46.2" in requirements
     assert "pip-audit --progress-spinner off --strict -r requirements-verify.txt" in workflow
     assert "bandit -q -lll -r dasops" in workflow

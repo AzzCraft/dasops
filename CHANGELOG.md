@@ -2,6 +2,12 @@
 
 ## v1.2.0-beta.1 — Unreleased
 
+- Reject empty required sections in imported Headless Surface Notes and Context
+  Packs during 1.5 creation and subsequent scaffold checks; headings, comments
+  and fenced examples alone do not supply project-specific values.
+- Pin the build and verification backend to setuptools 84.1.0, addressing
+  GHSA-xmj3-9gf7-h52w while retaining the existing wheel backend.
+
 - Require an active matching lease before starting the generated Codex worker;
   generate its prompt before launch and clean private temporary files on exit.
 - Read status from one guarded task/lock snapshot; pending recovery is an error.
