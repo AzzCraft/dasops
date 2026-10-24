@@ -280,13 +280,27 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
     author = authors[kind]
     if kind in ('headless_surface_note', 'context_pack'):
         markers=set(re.findall(r'<([^<>\n]+)>', author))
+        # Appendix M's standalone fields need visible values, not just headings.
+        required_sections = {}
+        section = None
+        for line in document_prose(author).splitlines():
+            if re.match(r'^#{1,6}\s+', line): section = line.lstrip('# ').strip()
+            elif section is not None and re.fullmatch(r'\s*<[^<>\n]+>\s*', line):
+                required_sections[section] = False
         section = 'Document Control'
         for line in text.splitlines():
-            if re.match(r'^#{1,6}\s+', line): section = line.lstrip('# ').strip()
+            if re.match(r'^#{1,6}\s+', line):
+                section = line.lstrip('# ').strip()
+                continue
             value = re.sub(r'^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?', '', line).strip().strip('`*_~').strip()
             marker = re.fullmatch(r'<([^<>\n]+)>', value)
             if marker and marker[1] in markers:
                 raise ValueError(kind + ': Appendix M still contains unfilled required values in ' + section + ': ' + value)
+            if section in required_sections and value:
+                required_sections[section] = True
+        for section, supplied in required_sections.items():
+            if not supplied:
+                raise ValueError(kind + ': Appendix M requires visible content in ' + section)
     actual_headings=headings(text)
     marker=r'(\{\{[^{}\n]+\}\}|\[\[[^\[\]\n]+\]\])'
     def matches_heading(template):

@@ -102,6 +102,19 @@ class TestV15ScaffoldInputs(unittest.TestCase):
         literal = 'Use <Type> literally; an example placeholder is <commands and evidence>.\n'
         document_check('headless_surface_note', (control+literal+'```text\n<commands and evidence>\n```\n').encode(), authors)
 
+    def test_appendix_sections_require_visible_content(self):
+        from dasops.scaffold_v15 import document_check
+        control = ('## Document Control\n- **Doc ID:** fixture-note\n- **Owner:** fixture-owner\n'
+                   '- **Status:** draft\n- **Governing standard:** DAS 1.5.0-beta.1\n'
+                   '- **Interaction profile:** headless\n')
+        for kind, heading in (('headless_surface_note', 'Verification'), ('context_pack', 'Verify')):
+            prefix = control+'### '+heading+'\n'
+            authors = {kind: prefix+'<commands and evidence>\n### Other\nOther prose.\n'}
+            for value in ('', '  \n', '<!-- explanation -->', '```sh\npytest\n```', '- [ ] '):
+                with self.subTest(kind=kind, value=value), self.assertRaisesRegex(ValueError, heading):
+                    document_check(kind, (prefix+value+'\n### Other\nOther prose.\n').encode(), authors)
+            document_check(kind, (prefix+'Run `pytest`; retain its report.\n### Other\nOther prose.\n').encode(), authors)
+
     def test_local_references_do_not_escape(self):
         from dasops.scaffold_v15 import local
         with tempfile.TemporaryDirectory() as temp:
