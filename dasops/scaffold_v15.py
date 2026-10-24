@@ -612,6 +612,29 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
         manual.write_text(product_manual(manual.read_text(),
                           [path for path,_ in documents.values()],
                           (staged/'local_extension_manifest.json').is_file()))
+        (staged/'vendor/README.md').write_text('''# Vendor folder
+
+Run this from the product root to install the selected Cadence source and resources:
+
+```bash
+./scripts/install_cadence_vendor.sh --from-suite /path/to/validated-suite-workspace
+```
+
+This 1.5 installer reads the fixed Suite workspace; it does not clone a tip or
+copy a sibling release directory. Use --force explicitly to replace an existing
+installation. See [the product manual](../docs/USER_MANUAL.md) for prerequisites,
+identity checks, failure recovery and the finite verification scope.
+The canonical Standard entry remains STANDARD_REF.md.
+''')
+        for name, old_claim in (
+            ('AGENTS.override.md', '`./scripts/verify` enforces these rules; if it fails, fix the layout.'),
+            ('docs/policies/AGENT_OPERATING_MODEL.md', '`./scripts/verify` includes a deterministic layout check and will fail the build if it finds stray files.'),
+        ):
+            guidance = staged/name
+            guidance.write_text(guidance.read_text().replace(old_claim,
+                '`./scripts/verify` checks the documented scaffold and configured execution scope; '
+                'it does not scan for stray task plans or legacy delta folders. '
+                'Review these path rules explicitly; a verify pass does not prove them.'))
         (staged/'STANDARD_REF.md').write_text('# Governing Standard\n\nDAS '+EDITION+'\n\n'+json.dumps(closure['refs']['standard'],sort_keys=True)+'\n')
         state=dict(standardRelease=EDITION, projectId=fields['Project slug'], interactionProfile=profile,
                    documents={kind:path for kind,(path,_) in documents.items()}, selectedSources=selected,
