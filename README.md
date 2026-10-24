@@ -13,7 +13,7 @@ This repository is a CLI + GUI **Factory tool** that generates DAS-aligned produ
 Recommended usage:
 
 - Clone **DAS Suite** (another repo das-suite) and let it pull this repo into `src/dasops`.
-- Use `python3 -m dasops create` to scaffold your product repo. Suite syncs the selected component sources; DASOps creates the product.
+- Install the selected DASOps component using the Quickstart below, then use `python -m dasops create` to scaffold your product repo. Suite syncs component sources; installing Suite alone does not install DASOps.
 
 Without **DAS Suite**, one can just git clone this repo to use this tool. See instructions below.
 
@@ -42,23 +42,40 @@ After generation, you work in the **product repo** (not this factory repo).
 
 ### 1) Install
 
-If you are using DAS Suite:
+If you are using DAS Suite, set `SUITE_ROOT` to your clean, cloned Suite
+repository. Keep the virtual environment outside that repository. Install from
+committed source archives so package build files do not enter the locked source
+workspaces; the temporary archives below can be removed after installation.
 
 ```bash
-cd das-suite
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
-python3 -m pip install -e .
+SUITE_ROOT=/absolute/path/to/das-suite
+DASOPS_VENV="$HOME/.venvs/dasops-suite"
+python3 -m venv "$DASOPS_VENV"
+. "$DASOPS_VENV/bin/activate"
 
-dassuite sync --repo-root /path/to/das-suite
+git -C "$SUITE_ROOT" archive --format=tar --output="$DASOPS_VENV/suite-source.tar" HEAD
+python -m pip install "$DASOPS_VENV/suite-source.tar"
+python -m dassuite sync --repo-root "$SUITE_ROOT"
+python -m dassuite report --workspace --repo-root "$SUITE_ROOT"
+
+# Install the factory selected by Suite, not an unrelated latest package.
+FACTORY_ROOT="$SUITE_ROOT/src/dasops"
+git -C "$FACTORY_ROOT" archive --format=tar --output="$DASOPS_VENV/dasops-source.tar" HEAD
+python -m pip install "$DASOPS_VENV/dasops-source.tar"
+rm -- "$DASOPS_VENV/suite-source.tar" "$DASOPS_VENV/dasops-source.tar"
+python -m dasops --help
 ```
+
+Stop if sync or the workspace report fails; resolve the reported mismatch before
+installing DASOps. Reuse this activated environment for the CLI and GUI below.
+This installs the creator, not the product's Cadence runtime.
 
 If you are using this repo directly:
 
 ```bash
 git clone https://github.com/AzzCraft/dasops.git
 cd dasops
+FACTORY_ROOT="$(pwd)"
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install -e .
@@ -66,6 +83,10 @@ dasops --help
 ```
 
 ### 2) Create a new product repo (CLI)
+
+The following command keeps the default Standard **1.4** behavior. For **1.5**,
+complete the Suite installation above and use the
+[explicit beta selection](#standard-15-scaffold-explicit-beta-selection) instead.
 
 ```bash
 # Create a product repo in a *different* directory (physical isolation)
@@ -88,10 +109,17 @@ cd ~/projects/my-product
 
 ### 3) Create a new product repo (GUI)
 
+With the same virtual environment activated, use the absolute `FACTORY_ROOT`
+set by either installation path above. These commands also work after changing
+into your product directory; GUI files belong to the factory, not the product.
+
 ```bash
-python3 -m pip install -r requirements-gui.txt
-streamlit run gui/app.py
+python -m pip install -r "$FACTORY_ROOT/requirements-gui.txt"
+python -m streamlit run "$FACTORY_ROOT/gui/app.py"
 ```
+
+For 1.5 in the GUI, select `1.5.0-beta.1` and enter the same `SUITE_ROOT` as the
+fixed synced workspace. GUI dependencies do not replace the DASOps installation.
 
 ---
 
@@ -171,12 +199,13 @@ are preserved without inventing verification history.
 
 ### Standard 1.5 scaffold (explicit beta selection)
 
-The default `create` target remains Standard 1.4. For 1.5, use a fixed synced
-Suite combination containing this creator and the dual-lock Cadence reader:
+The default `create` target remains Standard 1.4. For 1.5, complete the Suite
+Quickstart above, including installing its selected DASOps in the active venv.
+Use that same fixed `SUITE_ROOT` and actual 1.5 input documents:
 
 ```bash
-dasops create --standard-release 1.5.0-beta.1 \
-  --from-suite /path/to/suite --dest /path/to/new-product \
+python -m dasops create --standard-release 1.5.0-beta.1 \
+  --from-suite "$SUITE_ROOT" --dest /path/to/new-product \
   --master-doc /path/to/master.md --headless-note /path/to/headless.md
 ```
 
@@ -189,7 +218,7 @@ and no-Git 1.5 creation are outside this first Linux implementation.
 Creation imports documents, preserves the Suite originals and creates a product
 lock. It does not install a runtime or certify project conformance. In the new
 product, run `scripts/verify --scope scaffold` for structure; install with
-`scripts/install_cadence_vendor.sh --from-suite /path/to/suite`, then use
+`scripts/install_cadence_vendor.sh --from-suite "$SUITE_ROOT"`, then use
 `./cadencew doctor` and `./cadencew verify --profile dev`. The runtime is built
 once from the fixed clean source and checked before execution. Default product
 `scripts/verify` requests the finite full scope; unfinished documents, an absent

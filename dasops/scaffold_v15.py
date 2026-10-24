@@ -97,6 +97,16 @@ def file_ref(path):
     return dict(kind='file', uri=path, pinType='manifest', pinValue=path, floating=False)
 
 
+def check_extension_manifest(data, schema_path, schema=None):
+    value = json.loads(data, object_pairs_hook=_pairs)
+    if not isinstance(value, dict) or value.get('standardManifestVersion') != EDITION:
+        raise ValueError('extension manifest edition differs')
+    schema_check(value, schema_path, schema)
+    if any(identifier == 'org.example.project' or identifier.startswith('org.example.project.')
+           for item in value['extensions'] for identifier in (item['name'], item['namespace'])):
+        raise ValueError('example extension is not a project fact')
+
+
 def product_manual(template, document_paths, has_extensions):
     """Keep shared workflow guidance, with this product's paths and 1.5 commands."""
     before, marker, rest = template.partition('- System truth\n')
@@ -530,12 +540,9 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     if extension is None and 'local_extension_manifest.json' in master_refs:
         raise ValueError('Master references a missing extension manifest')
     if extension is not None:
-        extension_value=json.loads(extension)
-        if extension_value.get('standardManifestVersion')!=EDITION:raise ValueError('extension manifest edition differs')
-        schema_check(extension_value, standard / 'local_extension_manifest.schema.json',
-                     json.loads(standard_data['local_extension_manifest.schema.json'][0]))
+        check_extension_manifest(extension, standard / 'local_extension_manifest.schema.json',
+                                 json.loads(standard_data['local_extension_manifest.schema.json'][0]))
         if 'local_extension_manifest.json' not in master_refs: raise ValueError('Master must reference supplied extension manifest')
-        if b'org.example.project' in extension: raise ValueError('example extension is not a project fact')
     suite_commit = git(suite, 'rev-parse', 'HEAD')
     suite_data = source_snapshot(suite, [*SUITE_FILES, 'schemas'], suite_commit)
     upstream = {name: suite_data[name][0] for name in SUITE_FILES}
@@ -695,9 +702,7 @@ def verify(root, scope='scaffold'):
             identifiers.add(doc_fields['Doc ID'])
             pending.extend(kind+': '+item for item in items)
         if (root/'local_extension_manifest.json').exists():
-            extension_value=load(root/'local_extension_manifest.json')
-            if extension_value.get('standardManifestVersion')!=EDITION:raise ValueError('extension manifest edition differs')
-            schema_check(extension_value,base/'local_extension_manifest.schema.json')
+            check_extension_manifest(read(root/'local_extension_manifest.json'),base/'local_extension_manifest.schema.json')
             if 'local_extension_manifest.json' not in master_refs:raise ValueError('extension manifest is not referenced')
         elif 'local_extension_manifest.json' in master_refs:raise ValueError('referenced extension manifest missing')
         upstream=root/'tooling/das/suite'
