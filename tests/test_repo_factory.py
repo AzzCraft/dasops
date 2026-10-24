@@ -50,6 +50,39 @@ class TestSeedMachineReadableArtifacts(unittest.TestCase):
 
 
 class TestV15ScaffoldInputs(unittest.TestCase):
+    def test_actual_toolchain_versions_and_packaging_suffixes(self):
+        from unittest.mock import patch
+        from subprocess import CompletedProcess, TimeoutExpired
+        from dasops.scaffold_v15 import observe_toolchain
+        for output in ('git version 2.43.0', 'git version 2.43.0.windows.1', 'git version 2.43.0 (Apple Git-150)'):
+            with self.subTest(output=output), patch('dasops.scaffold_v15.platform.python_version', return_value='3.11.9'), patch('dasops.scaffold_v15.subprocess.run', return_value=CompletedProcess([],0,output,'')) as command:
+                self.assertEqual(observe_toolchain(), [{'name':'python3','version':'3.11.9'},{'name':'git','version':'2.43.0'}])
+                self.assertEqual(command.call_args.args[0], ['git','--version'])
+        for error in (FileNotFoundError(), TimeoutExpired('git',10)):
+            with self.subTest(error=type(error).__name__), patch('dasops.scaffold_v15.subprocess.run', side_effect=error), self.assertRaisesRegex(ValueError,'cannot observe'):
+                observe_toolchain()
+        for output in ('git version 2.29.0', 'git version unknown', 'git version 2.43.0\nextra'):
+            with self.subTest(output=output), patch('dasops.scaffold_v15.subprocess.run', return_value=CompletedProcess([],0,output,'')), self.assertRaises(ValueError):
+                observe_toolchain()
+
+    def test_toolchain_drift_missing_tools_and_recovery(self):
+        from unittest.mock import patch
+        from dasops.scaffold_v15 import check_toolchain
+        expected=[{'name':'python3','version':'3.11.9'},{'name':'git','version':'2.43.0'}]
+        with patch('dasops.scaffold_v15.observe_toolchain', return_value=expected):
+            self.assertFalse(check_toolchain(expected)['problems'])
+            self.assertTrue(check_toolchain([{'name':'python3','version':'>=3.10'},expected[1]])['problems'])
+            self.assertTrue(check_toolchain([expected[0],expected[0]])['problems'])
+        changed=[{'name':'python3','version':'3.12.0'},expected[1]]
+        with patch('dasops.scaffold_v15.observe_toolchain', return_value=changed):
+            result=check_toolchain(expected)
+            self.assertEqual(result['expected'],expected);self.assertEqual(result['observed'],changed)
+            self.assertIn('expected 3.11.9, observed 3.12.0',result['problems'][0])
+        with patch('dasops.scaffold_v15.observe_toolchain', side_effect=ValueError('cannot observe Git version')):
+            self.assertIn('cannot observe Git version',check_toolchain(expected)['problems'])
+        with patch('dasops.scaffold_v15.observe_toolchain', return_value=expected):
+            self.assertFalse(check_toolchain(expected)['problems'])
+
     def test_metadata_is_confined_to_document_control(self):
         from dasops.scaffold_v15 import metadata
         text = "# Fixture\n## Document Control\n- **Project slug** (stable identifier): `fixture-product`\n- **Status:** draft\n## Behavior\n- **Status:** active\n- **MUST**: unrelated prose\n"

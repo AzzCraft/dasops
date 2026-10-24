@@ -10,6 +10,7 @@ import ctypes
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -101,6 +102,41 @@ def git(root, *args):
     if proc.returncode:
         raise ValueError('Git input check failed: ' + proc.stderr.strip())
     return proc.stdout.strip()
+
+
+def observe_toolchain():
+    """Observe the tools this interpreter and the scaffold actually invoke."""
+    if sys.version_info < (3, 10):
+        raise ValueError('scaffold requires Python 3.10 or later')
+    try:
+        result = subprocess.run(['git', '--version'], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError('cannot observe Git version') from exc
+    # Normalize known packaging suffixes, retaining release-candidate identity.
+    match = re.fullmatch(r'git version (\d+\.\d+\.\d+(?:\.rc\d+)?)(?:\.windows\.\d+| \(Apple Git-[\w.]+\))?', result.stdout.strip())
+    if result.returncode or not match:
+        raise ValueError('cannot parse Git version')
+    version = match[1]
+    if tuple(map(int, version.split('.')[:3])) < (2, 30, 0):
+        raise ValueError('scaffold requires Git 2.30 or later')
+    return [dict(name='python3', version=platform.python_version()), dict(name='git', version=version)]
+
+
+def check_toolchain(expected):
+    result = dict(expected=expected, observed=[], problems=[])
+    try:
+        result['observed'] = observe_toolchain()
+        if (not isinstance(expected, list) or len(expected) != 2
+                or not all(isinstance(item, dict) for item in expected)
+                or {item.get('name') for item in expected} != {'python3', 'git'}):
+            raise ValueError('product toolchain must pin Python and Git exactly once')
+        pins = {item['name']: item.get('version') for item in expected}
+        for item in result['observed']:
+            if pins[item['name']] != item['version']:
+                result['problems'].append('toolchain '+item['name']+': expected '+str(pins[item['name']])+', observed '+item['version'])
+    except ValueError as exc:
+        result['problems'].append(str(exc))
+    return result
 
 
 def suite_inputs(suite):
@@ -447,7 +483,7 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
                 sourceOfTruth=dict(kind='git', uri='.', pinType='commit', pinValue='0'*40, floating=False),
                 verifyRuntime=closure['refs']['verifyRuntime'], suiteVersionClosureRef=file_ref('tooling/das/suite_version_closure.json'),
                 suiteLockRef=derived['suiteLockRef'], verifyRegistryRef=file_ref(VENDOR+'/cadence-registry/registry.json'),
-                toolchain=[dict(name='python3', version='>=3.10'), dict(name='git', version='>=2.30')])
+                toolchain=observe_toolchain())
     lock['mirrors']=[dict(kind='standard_local_copy',path='tooling/das/standard',
                           sourceOfTruth=closure['refs']['standard']['uri'],
                           mirrorPurpose='Selected pinned templates and schemas for offline scaffold checks',
@@ -553,6 +589,7 @@ def check_entry_files(root, documents):
 
 def verify(root, scope='scaffold'):
     root=Path(root).resolve();problems=[];pending=[];checks=[]
+    toolchain=dict(expected=[],observed=[],problems=[])
     try:
         state=load(root/STATE)
         if state['standardRelease']!=EDITION: raise ValueError('unsupported scaffold edition')
@@ -590,6 +627,8 @@ def verify(root, scope='scaffold'):
             schema_check(load(upstream/name),upstream/'schemas/das-standard'/SCHEMAS[name])
         original=load(upstream/'suite_version_closure.json');derived=load(root/'tooling/das/suite_version_closure.json');lock=load(root/'tooling_lock.json')
         schema_check(derived,base/'suite_version_closure.schema.json');schema_check(lock,base/'tooling_lock.schema.json')
+        toolchain=check_toolchain(lock['toolchain'])
+        pending.extend(toolchain['problems'])
         for name in ('refs','standardVersion','standardManifestVersion','suiteVersion','factoryVersion','verifyRuntimeVersion'):
             if derived[name]!=original[name]:raise ValueError('derived closure identity changed: '+name)
         expected={'suiteToolingLock':'tooling/das/suite/suite.tooling_lock.json','repoToolingLock':'tooling_lock.json'}
@@ -614,7 +653,7 @@ def verify(root, scope='scaffold'):
         if runtime_installed: installed(root)
         else: pending.append('runtime: not installed')
         if scope=='full':
-            if pending:raise ValueError('full verification requires completed documents and installed runtime')
+            if pending:raise ValueError('full verification requires completed documents, matching toolchain and installed runtime')
             if 'ui_spec' in docs:
                 run_frontend(root)
                 checks.append(dict(name='product-frontend-command',status='passed',command='scripts/verify-frontend'))
@@ -622,7 +661,7 @@ def verify(root, scope='scaffold'):
             if result.returncode:raise ValueError('native core verification failed: '+result.stderr.strip())
             checks.append(dict(name='native-core',status='passed',policyMetadataOnly=True))
     except (ValueError,OSError,KeyError,TypeError,subprocess.SubprocessError,yaml.YAMLError) as exc:problems.append(str(exc))
-    return dict(ok=not problems,scope=scope,problems=problems,pendingItems=pending,checks=checks,
+    return dict(ok=not problems,scope=scope,problems=problems,pendingItems=pending,checks=checks,toolchain=toolchain,
                 qualification=False,coverage='scaffold structure'+(' and existing native core checks' if scope=='full' else ''))
 
 

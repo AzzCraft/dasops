@@ -294,7 +294,11 @@ git worktree remove ../wt-T-002
 git worktree prune
 ```
 
-Section 7. Cadence integration
+Section 7. Cadence integration for the default 1.4 scaffold
+
+The commands below describe the legacy 1.4 scaffold. For an explicitly selected
+1.5 scaffold, use [Explicit 1.5 beta creation](#explicit-15-beta-creation) below;
+the installation layouts and launcher behavior differ.
 
 Cadence provides deterministic verification and evidence artifacts.
 
@@ -396,5 +400,20 @@ imports documents; it does not invent project facts or approval. Select a fixed
 synced Suite workspace, then upload the Master and applicable UI/headless/L2
 files. Optional Cadence installation uses that same workspace. Creation,
 installation and checks have separate results; a saved draft remains a draft.
+
+From a generated 1.5 product, install with
+`./scripts/install_cadence_vendor.sh --from-suite /path/to/das-suite`.
+This builds the pinned source with Go and installs only its selected binary and
+runtime resources, not the entire Cadence repository. Do not run the legacy
+`vendor/cadence/cadence-oss/scripts/verify` command in this layout. Use
+`./cadencew doctor` and `./cadencew verify --profile dev`; the launcher verifies
+the installed identity and never falls back to a global PATH binary.
+
+The product lock records the Python and Git versions observed during creation.
+Verification reports locked and current versions separately; a mismatch remains
+pending in `--scope scaffold` and prevents default full verification. It never
+rewrites the lock to hide drift. Go's actual build version remains in the local
+installation record. These observations do not certify the future product CI
+environment or complete DAS qualification.
 
 For UI projects, implement the actual product tests in the generated `scripts/verify-frontend`. The initial entry fails explicitly; full verification calls it and reports its exit separately from native core checks. It must not call the top-level verify script recursively. Passing that command is not a claim that DASOps itself evaluated the UI.

@@ -13,7 +13,7 @@ This repository is a CLI + GUI **Factory tool** that generates DAS-aligned produ
 Recommended usage:
 
 - Clone **DAS Suite** (another repo das-suite) and let it pull this repo into `src/dasops`.
-- Use `dassuite new-product` or `python3 -m dasops create` to scaffold your product repo.
+- Use `python3 -m dasops create` to scaffold your product repo. Suite syncs the selected component sources; DASOps creates the product.
 
 Without **DAS Suite**, one can just git clone this repo to use this tool. See instructions below.
 
@@ -51,7 +51,7 @@ source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 python3 -m pip install -e .
 
-dassuite sync --tier oss
+dassuite sync --repo-root /path/to/das-suite
 ```
 
 If you are using this repo directly:
