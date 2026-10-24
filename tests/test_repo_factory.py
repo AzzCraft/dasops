@@ -114,6 +114,7 @@ class TestV15ScaffoldInputs(unittest.TestCase):
                 with self.subTest(kind=kind, value=value), self.assertRaisesRegex(ValueError, heading):
                     document_check(kind, (prefix+value+'\n### Other\nOther prose.\n').encode(), authors)
             document_check(kind, (prefix+'Run `pytest`; retain its report.\n### Other\nOther prose.\n').encode(), authors)
+            document_check(kind, (prefix+'#### Commands\nRun `pytest`; retain its report.\n### Other\nOther prose.\n').encode(), authors)
 
     def test_local_references_do_not_escape(self):
         from dasops.scaffold_v15 import local

@@ -288,16 +288,23 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
             elif section is not None and re.fullmatch(r'\s*<[^<>\n]+>\s*', line):
                 required_sections[section] = False
         section = 'Document Control'
+        active_section = None
+        active_level = 0
         for line in text.splitlines():
-            if re.match(r'^#{1,6}\s+', line):
+            heading = re.match(r'^(#{1,6})\s+', line)
+            if heading:
                 section = line.lstrip('# ').strip()
+                if section in required_sections:
+                    active_section, active_level = section, len(heading[1])
+                elif len(heading[1]) <= active_level:
+                    active_section = None
                 continue
             value = re.sub(r'^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?', '', line).strip().strip('`*_~').strip()
             marker = re.fullmatch(r'<([^<>\n]+)>', value)
             if marker and marker[1] in markers:
                 raise ValueError(kind + ': Appendix M still contains unfilled required values in ' + section + ': ' + value)
-            if section in required_sections and value:
-                required_sections[section] = True
+            if active_section is not None and value:
+                required_sections[active_section] = True
         for section, supplied in required_sections.items():
             if not supplied:
                 raise ValueError(kind + ': Appendix M requires visible content in ' + section)
