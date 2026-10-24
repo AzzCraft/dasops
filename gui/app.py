@@ -44,10 +44,16 @@ This physical isolation prevents AI agents from accidentally running/modifying t
     default_dest = str(Path.home() / "projects" / "my-product")
     dest = st.text_input("Product repo output directory", value=default_dest)
 
+    standard_release = st.selectbox("DAS Standard release", ["1.4.0", "1.5.0-beta.1"])
+    selected_suite = st.text_input("Fixed synced Suite workspace (required for 1.5)", value="") if standard_release == "1.5.0-beta.1" else ""
     st.subheader("Input documents")
     master_file = st.file_uploader("Master Doc (master_doc.md)", type=["md", "markdown"])
     ui_file = st.file_uploader("UI Spec (ui_spec.md)", type=["md", "markdown"])
 
+    headless_file = st.file_uploader("Headless Surface Note (when applicable)", type=["md", "markdown"]) if standard_release == "1.5.0-beta.1" else None
+    context_file = st.file_uploader("Context Pack (L2)", type=["md", "markdown"]) if standard_release == "1.5.0-beta.1" else None
+    extension_file = st.file_uploader("Local extensions (only real declarations)", type=["json"]) if standard_release == "1.5.0-beta.1" else None
+    st.caption("The Master document declares interaction and conformance profiles; missing UI input does not imply headless.")
     st.subheader("Optional: create an initial change folder")
     change_id = st.text_input("Initial change id", value="initial")
     intent = st.text_input("Intent", value="Initial bootstrap")
@@ -87,11 +93,14 @@ This physical isolation prevents AI agents from accidentally running/modifying t
         if not dest.strip():
             st.error("Please provide a destination directory.")
             return
-        if master_file is None or ui_file is None:
+        if master_file is None or (standard_release == "1.4.0" and ui_file is None):
             st.error("Please upload BOTH master_doc.md and ui_spec.md.")
             return
 
-        dest_path = Path(dest).expanduser().resolve()
+        if standard_release == "1.5.0-beta.1" and not selected_suite.strip():
+            st.error("Select a fixed synced Suite workspace for Standard 1.5.")
+            return
+        dest_path = Path(dest).expanduser().absolute()
         if dest_path == factory_root or dest_path.is_relative_to(factory_root):
             if not allow_inside_factory:
                 st.error(
@@ -105,16 +114,19 @@ This physical isolation prevents AI agents from accidentally running/modifying t
             try:
                 vendor_cmd = build_install_cadence_command(
                     tier=cadence_tier,
-                    from_suite=cadence_suite_path.strip() if cadence_source_mode == "From DAS Suite" else None,
-                    git_base=cadence_git_base.strip() if cadence_source_mode == "Clone from Git base" else None,
-                    org=(cadence_org.strip() or None) if cadence_source_mode == "Clone from Git base" else None,
-                    use_ssh=cadence_ssh if cadence_source_mode == "Clone from Git base" else False,
+                    from_suite=selected_suite.strip() if standard_release == "1.5.0-beta.1" else (cadence_suite_path.strip() if cadence_source_mode == "From DAS Suite" else None),
+                    git_base=cadence_git_base.strip() if standard_release == "1.4.0" and cadence_source_mode == "Clone from Git base" else None,
+                    org=(cadence_org.strip() or None) if standard_release == "1.4.0" and cadence_source_mode == "Clone from Git base" else None,
+                    use_ssh=cadence_ssh if standard_release == "1.4.0" and cadence_source_mode == "Clone from Git base" else False,
                 )
             except ValueError as exc:
                 st.error(str(exc))
                 return
         master_path = _write_temp_bytes("master_doc", master_file.getvalue())
-        ui_path = _write_temp_bytes("ui_spec", ui_file.getvalue())
+        ui_path = _write_temp_bytes("ui_spec", ui_file.getvalue()) if ui_file else None
+        headless_path = _write_temp_bytes("headless", headless_file.getvalue()) if headless_file else None
+        context_path = _write_temp_bytes("context", context_file.getvalue()) if context_file else None
+        extension_path = _write_temp_bytes("extension", extension_file.getvalue()) if extension_file else None
 
         try:
             out = create_product_repo(
@@ -122,6 +134,11 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 dest_dir=dest_path,
                 master_doc_path=master_path,
                 ui_spec_path=ui_path,
+                standard_release=standard_release,
+                from_suite=Path(selected_suite) if selected_suite else None,
+                headless_note_path=headless_path,
+                context_pack_path=context_path,
+                extension_manifest_path=extension_path,
                 change_id=(change_id.strip() or None),
                 intent=intent.strip(),
                 init_git=init_git,
@@ -129,6 +146,9 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 change_empty=change_empty,
             )
             st.success(f"Created product repo: {out}")
+            if standard_release == "1.5.0-beta.1":
+                from dasops.scaffold_v15 import verify
+                st.json(verify(out, scope="scaffold"))
             if vendor_cmd is not None:
                 result = subprocess.run(vendor_cmd, cwd=str(out), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 if result.returncode:
@@ -145,8 +165,12 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 "- Health check: `dasops doctor`\n"
                 "- Start a task: `dasops start-task --change-id <change-id> --task-id <id>`\n"
                 "- Claim ready: `dasops claim-ready --change-id <change-id>`\n"
-                "- Verify sub-systems: `scripts/verify-backend`, `scripts/verify-frontend`\n"
-                "- Frontend gate checks matrix structure and evidence-file presence; visual comparison requires your product's actual UI tests\n"
+                + ("- Check structure: `scripts/verify --scope scaffold`; complete documents and install the fixed runtime before `scripts/verify`\n"
+                   "- UI projects must implement `scripts/verify-frontend`; the generated stub fails until real product tests are supplied\n"
+                   if standard_release == "1.5.0-beta.1" else
+                   "- Verify sub-systems: `scripts/verify-backend`, `scripts/verify-frontend`\n"
+                   "- Frontend gate checks matrix structure and evidence-file presence; visual comparison requires your product's actual UI tests\n")
+                +
                 "- Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."
             )
         except (SystemExit, RuntimeError) as e:
@@ -154,8 +178,8 @@ This physical isolation prevents AI agents from accidentally running/modifying t
         except Exception as e:
             st.exception(e)
         finally:
-            master_path.unlink(missing_ok=True)
-            ui_path.unlink(missing_ok=True)
+            for path in (master_path, ui_path, headless_path, context_path, extension_path):
+                if path is not None: path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

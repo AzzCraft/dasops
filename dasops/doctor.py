@@ -89,6 +89,14 @@ def run_doctor(repo_root: Path) -> DoctorReport:
 
     repo_type = "product" if is_product_repo else "factory"
 
+    if is_product_repo and (repo_root / ".dasops-scaffold.json").is_file():
+        from .scaffold_v15 import verify
+        result = verify(repo_root, scope="scaffold")
+        pending = result["pendingItems"]
+        runtime_problems = [p for p in pending if p.startswith("runtime:")]
+        return DoctorReport(repo_root, "product", result["problems"] + runtime_problems,
+                            [p for p in pending if p not in runtime_problems])
+
     if is_product_repo:
         required = [
             repo_root / "docs" / "master_doc.md",

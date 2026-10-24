@@ -228,13 +228,30 @@ def create_product_repo(
     factory_root: Path,
     dest_dir: Path,
     master_doc_path: Path,
-    ui_spec_path: Path,
+    ui_spec_path: Path | None = None,
+    standard_release: str = "1.4.0",
+    from_suite: Path | None = None,
+    headless_note_path: Path | None = None,
+    context_pack_path: Path | None = None,
+    extension_manifest_path: Path | None = None,
     change_id: Optional[str] = None,
     intent: str = "",
     init_git: bool = True,
     overwrite: bool = False,
     change_empty: bool = False,
 ) -> Path:
+    if standard_release == "1.5.0-beta.1":
+        from .scaffold_v15 import create
+        return create(factory_root=factory_root, dest_dir=dest_dir, master_doc_path=master_doc_path,
+                      ui_spec_path=ui_spec_path, from_suite=from_suite, headless_note_path=headless_note_path,
+                      context_pack_path=context_pack_path, extension_manifest_path=extension_manifest_path,
+                      change_id=change_id, intent=intent, init_git=init_git, overwrite=overwrite, change_empty=change_empty)
+    if standard_release != "1.4.0":
+        raise ValueError("Unsupported Standard release: " + standard_release)
+    if any(value is not None for value in (from_suite, headless_note_path, context_pack_path, extension_manifest_path)):
+        raise ValueError("Suite/conditional-document create inputs require Standard 1.5")
+    if ui_spec_path is None:
+        raise ValueError("Standard 1.4 create requires --ui-spec")
     return create_product_repo_from_template(
         template_dir=factory_template_dir(factory_root),
         dest_dir=dest_dir,

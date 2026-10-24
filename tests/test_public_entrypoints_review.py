@@ -131,6 +131,10 @@ def test_gui_preflights_source_and_retains_created_product_on_install_failure(tm
             return True if label == "Install Cadence under vendor/cadence" else value
         def file_uploader(self, *args, **kwargs): return SimpleNamespace(getvalue=lambda: b"# Synthetic input\n")
         def selectbox(self, label, options, **kwargs):
+            if label == "DAS Standard release":
+                assert options == ["1.4.0", "1.5.0-beta.1"]
+                return "1.4.0"  # Keep this legacy install-failure regression on its original path.
+            assert label == "Cadence tier"
             assert options == ["oss"]
             return options[0]
         def radio(self, *args, **kwargs): return "Clone from Git base"

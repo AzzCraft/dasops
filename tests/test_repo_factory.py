@@ -49,5 +49,79 @@ class TestSeedMachineReadableArtifacts(unittest.TestCase):
             self.assertTrue(data.get("custom"))
 
 
+class TestV15ScaffoldInputs(unittest.TestCase):
+    def test_metadata_is_confined_to_document_control(self):
+        from dasops.scaffold_v15 import metadata
+        text = "# Fixture\n## Document Control\n- **Project slug** (stable identifier): `fixture-product`\n- **Status:** draft\n## Behavior\n- **Status:** active\n- **MUST**: unrelated prose\n"
+        self.assertEqual(metadata(text), {"Project slug":"fixture-product","Status":"draft"})
+
+    def test_duplicate_control_fields_reject(self):
+        from dasops.scaffold_v15 import metadata
+        with self.assertRaisesRegex(ValueError,"ambiguous"):
+            metadata("## Document Control\n- **Status:** draft\n- **Status:** active\n")
+
+    def test_visible_metadata_and_headings_share_fence_and_comment_rules(self):
+        from dasops.scaffold_v15 import metadata, headings, document_prose
+        text = ("<!--\n## Document Control\n- **Status:** active\n-->\n"
+                "````md\n```\n## Document Control\n- **Status:** frozen\n````\n"
+                "## Document Control\n- **Status:** draft <!-- allowed explanation -->\n"
+                "## Scope\nVisible text.\n<!-- unclosed hidden tail\n## Hidden\n")
+        self.assertEqual(metadata(text), {"Status":"draft"})
+        self.assertEqual(headings(text), ["## Document Control", "## Scope"])
+        self.assertNotIn("Hidden", document_prose(text))
+
+    def test_legacy_and_unknown_vendor_formats_are_distinct(self):
+        from dasops.vendor import validate_vendor_integrity
+        self.assertTrue(validate_vendor_integrity({}, {}))
+        self.assertTrue(validate_vendor_integrity({"pins":{}}, {}))
+        self.assertTrue(validate_vendor_integrity({"verifyRuntime":{"pinValue":"fixed"}}, {}))
+
+    def test_document_references_require_complete_local_paths(self):
+        from dasops.scaffold_v15 import document_references
+        path = 'docs/headless_surface_note.md'
+        for reference in (path, '`'+path+'`', '[Note]('+path+')', '[Note](<'+path+'#verification>)', path+'.'):
+            with self.subTest(reference=reference):
+                self.assertIn(path, document_references(reference))
+        for reference in (path+'.backup', 'other/'+path, '../'+path, '/'+path, path+'?copy=1',
+                          '['+path+'](docs/other.md)', '['+path+']()', '['+path+']( )', 'https://example.invalid/'+path,
+                          '<!-- '+path+' -->', '```md\n'+path+'\n```'):
+            with self.subTest(reference=reference):
+                self.assertNotIn(path, document_references(reference))
+        self.assertNotIn('local_extension_manifest.json', document_references('local_extension_manifest.json.backup'))
+
+    def test_section_values_cannot_hide_unfilled_markers_in_lists(self):
+        from dasops.scaffold_v15 import document_check
+        control = ('## Document Control\n- **Doc ID:** fixture-note\n- **Owner:** fixture-owner\n'
+                   '- **Status:** draft\n- **Governing standard:** DAS 1.5.0-beta.1\n'
+                   '- **Interaction profile:** headless\n### Verification\n')
+        authors = {'headless_surface_note': control+'<commands and evidence>\n'}
+        for value in ('<commands and evidence>', '- <commands and evidence>', '1. **<commands and evidence>**',
+                      '- [ ] `<commands and evidence>`'):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'Verification'):
+                document_check('headless_surface_note', (control+value+'\n').encode(), authors)
+        literal = 'Use <Type> literally; an example placeholder is <commands and evidence>.\n'
+        document_check('headless_surface_note', (control+literal+'```text\n<commands and evidence>\n```\n').encode(), authors)
+
+    def test_appendix_sections_require_visible_content(self):
+        from dasops.scaffold_v15 import document_check
+        control = ('## Document Control\n- **Doc ID:** fixture-note\n- **Owner:** fixture-owner\n'
+                   '- **Status:** draft\n- **Governing standard:** DAS 1.5.0-beta.1\n'
+                   '- **Interaction profile:** headless\n')
+        for kind, heading in (('headless_surface_note', 'Verification'), ('context_pack', 'Verify')):
+            prefix = control+'### '+heading+'\n'
+            authors = {kind: prefix+'<commands and evidence>\n### Other\nOther prose.\n'}
+            for value in ('', '  \n', '<!-- explanation -->', '```sh\npytest\n```', '- [ ] '):
+                with self.subTest(kind=kind, value=value), self.assertRaisesRegex(ValueError, heading):
+                    document_check(kind, (prefix+value+'\n### Other\nOther prose.\n').encode(), authors)
+            document_check(kind, (prefix+'Run `pytest`; retain its report.\n### Other\nOther prose.\n').encode(), authors)
+            document_check(kind, (prefix+'#### Commands\nRun `pytest`; retain its report.\n### Other\nOther prose.\n').encode(), authors)
+
+    def test_local_references_do_not_escape(self):
+        from dasops.scaffold_v15 import local
+        with tempfile.TemporaryDirectory() as temp:
+            for value in ("../outside", "/outside"):
+                with self.assertRaises(ValueError):local(Path(temp),value)
+
+
 if __name__ == "__main__":
     unittest.main()
