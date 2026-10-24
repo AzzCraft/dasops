@@ -754,16 +754,21 @@ def run_frontend(root):
 
 def installed(root):
     state=load(root/STATE);base=root/VENDOR;record=load(base/'.dasops-install.json')
-    if record['runtime']!=state['selectedSources']['runtime']:raise ValueError('installed runtime source differs')
+    if record['runtime']!=state['selectedSources']['runtime']:
+        raise ValueError('installed runtime source differs: expected '+json.dumps(state['selectedSources']['runtime'],sort_keys=True)+', observed '+json.dumps(record['runtime'],sort_keys=True))
     for path,expected in state['resourceDigests'].items():
-        if digest(read(local(base,path)))!=expected:raise ValueError('installed resource changed: '+path)
+        observed=digest(read(local(base,path)))
+        if observed!=expected:raise ValueError(f'installed resource changed: {path}: expected {expected}, observed {observed}')
     binary=local(base,record['binaryPath'])
-    if digest(read(binary))!=record['binaryDigest']:raise ValueError('installed binary differs')
+    observed=digest(read(binary))
+    if observed!=record['binaryDigest']:raise ValueError(f"installed binary differs: expected {record['binaryDigest']}, observed {observed}")
     proc=subprocess.run([str(binary),'version','--json'],capture_output=True,text=True,timeout=10)
     if proc.returncode:raise ValueError('installed version check failed')
     identity=json.loads(proc.stdout)
-    if identity['binarySha256']!=record['binaryDigest'] or identity['releaseVersion']!=record['releaseVersion'] or identity['sourceModified'] or identity['sourceRevision']!=record['runtime']['pinValue']:
-        raise ValueError('native binary/source identity differs')
+    expected=dict(binarySha256=record['binaryDigest'],releaseVersion=record['releaseVersion'],sourceModified=False,sourceRevision=record['runtime']['pinValue'])
+    observed={key:identity.get(key) for key in expected}
+    if observed!=expected:
+        raise ValueError('native binary/source identity differs: expected '+json.dumps(expected,sort_keys=True)+', observed '+json.dumps(observed,sort_keys=True))
     return binary
 
 
