@@ -181,6 +181,18 @@ the actual UI document set, independently of the native ui.enabled setting.
 Headless products do not require that UI command. Failed or unexecuted required
 checks cannot produce an overall full pass. Creation and verification never
 grant adoption approval or reference qualification.
+
+CI preparation:
+
+The generated checkout uses fetch-depth: 0 so the locked C0 bootstrap commit
+remains reachable. For an existing shallow checkout, fetch its missing history
+with git fetch --unshallow origin; do not replace the lock's pin with HEAD.
+Before enabling full CI, configure the workflow's Python and Git versions to
+match tooling_lock.json, prepare the selected Suite workspace, and run the fixed
+installer above on the runner. The ignored local vendor installation is not
+included in a fresh checkout. Complete the documents and applicable product tests
+as well. The starter CI keeps full verification and will fail until these inputs
+are ready; a scaffold-only check is not a replacement for that full gate.
 ''')
 
 
@@ -635,6 +647,9 @@ The canonical Standard entry remains STANDARD_REF.md.
                 '`./scripts/verify` checks the documented scaffold and configured execution scope; '
                 'it does not scan for stray task plans or legacy delta folders. '
                 'Review these path rules explicitly; a verify pass does not prove them.'))
+        ci = staged/'.github/workflows/ci.yml'
+        ci.write_text(ci.read_text().replace('          persist-credentials: false\n',
+                      '          persist-credentials: false\n          fetch-depth: 0\n', 1))
         (staged/'STANDARD_REF.md').write_text('# Governing Standard\n\nDAS '+EDITION+'\n\n'+json.dumps(closure['refs']['standard'],sort_keys=True)+'\n')
         state=dict(standardRelease=EDITION, projectId=fields['Project slug'], interactionProfile=profile,
                    documents={kind:path for kind,(path,_) in documents.items()}, selectedSources=selected,
