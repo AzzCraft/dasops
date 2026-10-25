@@ -196,6 +196,30 @@ are ready; a scaffold-only check is not a replacement for that full gate.
 ''')
 
 
+def verification_plan(template, document_paths):
+    before, entry_marker, rest = template.partition('## Verify entrypoints\n')
+    _, boundary_marker, rest = rest.partition('## Boundary checks (fail fast)\n')
+    strategy, evidence_marker, _ = rest.partition('## Evidence required in PR\n')
+    if not (entry_marker and boundary_marker and evidence_marker):
+        raise ValueError('verification plan template sections are missing')
+    ui = 'docs/ui_spec.md' in document_paths
+    return (before + '## Canonical documents\n\n'
+            + ''.join('- `' + path + '`\n' for path in document_paths)
+            + '\n' + entry_marker + '''
+| Area | Command | Notes |
+|---|---|---|
+| Structure | ./scripts/verify --scope scaffold | Structure and pending inputs only; not full verification |
+| System | ./scripts/verify | Required full scope: completed documents, matching toolchain, fixed runtime and applicable product tests |
+'''
+            + ('| Frontend | ./scripts/verify-frontend | Required by full for this UI/mixed product; replace the failing stub with real product tests |\n' if ui else '')
+            + '\n' + boundary_marker + strategy + evidence_marker + '''
+- Record the exact commands, exit codes, scope, source/runtime identities and retained output paths.
+- List pending inputs and checks that failed or were not run; a scaffold pass is not a full pass.
+'''
+            + ('- Record the actual UI test results. Screenshots or visual baselines are required only when the product test plan specifies them; file presence alone does not verify UI behavior.\n' if ui else '')
+            + '- These checks do not grant adoption approval or reference qualification.\n')
+
+
 def git(root, *args):
     proc = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=30)
     if proc.returncode:
@@ -598,6 +622,17 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     try:
         staged = Path(directory) / 'repo';staged.mkdir();write_snapshot(staged, templates)
         # Adapt only factory-owned guidance, before importing user documents.
+        document_paths = [path for path, _ in documents.values()]
+        for name in ('AGENTS.override.md', 'docs/guides/dont_blame_ai.md',
+                     'docs/policies/AGENT_OPERATING_MODEL.md', 'openspec/project.md',
+                     'openspec/specs/README.md'):
+            guidance = staged/name
+            guidance.write_text(re.sub(
+                r'(?m)^( *)- (`?)docs/master_doc\.md\2[^\n]*\n\1- \2docs/ui_spec\.md\2[^\n]*',
+                lambda match: '\n'.join(match[1]+'- '+match[2]+path+match[2] for path in document_paths),
+                guidance.read_text()))
+        plan = staged/'openspec/schemas/das-standard/templates/verification_plan.md'
+        plan.write_text(verification_plan(plan.read_text(), document_paths))
         if profile == 'headless' and 'ui_spec' not in documents:
             for guidance in staged.rglob('*.md'):
                 guidance.write_text(guidance.read_text().replace('docs/ui_spec.md','docs/headless_surface_note.md'))
