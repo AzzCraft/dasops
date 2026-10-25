@@ -131,7 +131,7 @@ STRUCTURED_ARTIFACT_RULES = {
 COMMAND_PARITY_RULES = {
     "factoryReadmeCreate": ("README.md", "python3 -m dasops create"),
     "factoryReadmeVerify": ("README.md", "./scripts/verify"),
-    "factoryReadmeGui": ("README.md", "streamlit run gui/app.py"),
+    "factoryReadmeGui": ("README.md", 'python3 -m streamlit run "$FACTORY_ROOT/gui/app.py"'),
     "factoryUserManualGui": ("docs/USER_MANUAL.md", "streamlit run gui/app.py"),
     "factoryUserManualVerify": ("docs/USER_MANUAL.md", "./scripts/verify"),
     "factoryUserManualVendorVerify": ("docs/USER_MANUAL.md", "vendor/cadence/cadence-oss/scripts/verify"),

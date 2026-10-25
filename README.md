@@ -13,7 +13,7 @@ This repository is a CLI + GUI **Factory tool** that generates DAS-aligned produ
 Recommended usage:
 
 - Clone **DAS Suite** (another repo das-suite) and let it pull this repo into `src/dasops`.
-- Install the selected DASOps component using the Quickstart below, then use `python -m dasops create` to scaffold your product repo. Suite syncs component sources; installing Suite alone does not install DASOps.
+- Install the selected DASOps component using the Quickstart below, then use `python3 -m dasops create` to scaffold your product repo. Suite syncs component sources; installing Suite alone does not install DASOps.
 
 Without **DAS Suite**, one can just git clone this repo to use this tool. See instructions below.
 
@@ -54,16 +54,16 @@ python3 -m venv "$DASOPS_VENV"
 . "$DASOPS_VENV/bin/activate"
 
 git -C "$SUITE_ROOT" archive --format=tar --output="$DASOPS_VENV/suite-source.tar" HEAD
-python -m pip install "$DASOPS_VENV/suite-source.tar"
-python -m dassuite sync --repo-root "$SUITE_ROOT"
-python -m dassuite report --workspace --repo-root "$SUITE_ROOT"
+python3 -m pip install "$DASOPS_VENV/suite-source.tar"
+python3 -m dassuite sync --repo-root "$SUITE_ROOT"
+python3 -m dassuite report --workspace --repo-root "$SUITE_ROOT"
 
 # Install the factory selected by Suite, not an unrelated latest package.
 FACTORY_ROOT="$SUITE_ROOT/src/dasops"
 git -C "$FACTORY_ROOT" archive --format=tar --output="$DASOPS_VENV/dasops-source.tar" HEAD
-python -m pip install "$DASOPS_VENV/dasops-source.tar"
+python3 -m pip install "$DASOPS_VENV/dasops-source.tar"
 rm -- "$DASOPS_VENV/suite-source.tar" "$DASOPS_VENV/dasops-source.tar"
-python -m dasops --help
+python3 -m dasops --help
 ```
 
 Stop if sync or the workspace report fails; resolve the reported mismatch before
@@ -114,8 +114,8 @@ set by either installation path above. These commands also work after changing
 into your product directory; GUI files belong to the factory, not the product.
 
 ```bash
-python -m pip install -r "$FACTORY_ROOT/requirements-gui.txt"
-python -m streamlit run "$FACTORY_ROOT/gui/app.py"
+python3 -m pip install -r "$FACTORY_ROOT/requirements-gui.txt"
+python3 -m streamlit run "$FACTORY_ROOT/gui/app.py"
 ```
 
 For 1.5 in the GUI, select `1.5.0-beta.1` and enter the same `SUITE_ROOT` as the
@@ -204,7 +204,7 @@ Quickstart above, including installing its selected DASOps in the active venv.
 Use that same fixed `SUITE_ROOT` and actual 1.5 input documents:
 
 ```bash
-python -m dasops create --standard-release 1.5.0-beta.1 \
+python3 -m dasops create --standard-release 1.5.0-beta.1 \
   --from-suite "$SUITE_ROOT" --dest /path/to/new-product \
   --master-doc /path/to/master.md --headless-note /path/to/headless.md
 ```

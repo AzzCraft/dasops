@@ -22,6 +22,26 @@ class TemplateAuditTests(unittest.TestCase):
         self.assertIn("commandParityChecks", payload)
         self.assertIn("frontendEvidenceContract", payload)
         self.assertIn("unsupportedHints", payload)
+        self.assertNotRegex((REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+                            r"(?<![A-Za-z0-9_])python -m(?: pip)?\b")
+
+    def test_template_audit_rejects_gui_entry_outside_factory_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            scratch = Path(tmp_dir) / "factory"
+            scratch.mkdir()
+            for name in ("templates", "docs", "gui"):
+                shutil.copytree(REPO_ROOT / name, scratch / name)
+            readme = scratch / "README.md"
+            text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+            readme.write_text(text, encoding="utf-8")
+            self.assertEqual(run_template_audit(scratch).problems, [])
+            readme.write_text(text.replace('"$FACTORY_ROOT/gui/app.py"', 'gui/app.py'), encoding="utf-8")
+            report = run_template_audit(scratch)
+            self.assertFalse(report.command_parity["factoryReadmeGui"])
+            self.assertTrue(any(item.code == "command_parity_mismatch" and item.path == "README.md"
+                                for item in report.problem_details), report.problem_details)
+            readme.write_text(text, encoding="utf-8")
+            self.assertEqual(run_template_audit(scratch).problems, [])
 
     def test_template_audit_detects_missing_fail_closed_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
