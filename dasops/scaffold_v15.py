@@ -377,15 +377,25 @@ def author_section(entry, source):
 
 def document_prose(text):
     """Visible Markdown for metadata, headings, pending fields and references."""
-    rows=[];fence=None
-    text = re.sub(r'<!--.*?(?:-->|\Z)', lambda m: '\n' * m[0].count('\n'), text, flags=re.S)
+    rows=[];fence=None;comment=False
     for line in text.splitlines():
         mark=re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$',line)
-        if mark:
-            if fence is None:fence=mark[1]
-            elif mark[1][0]==fence[0] and len(mark[1])>=len(fence) and not mark[2].strip():fence=None
+        if fence is not None:
+            if mark and mark[1][0]==fence[0] and len(mark[1])>=len(fence) and not mark[2].strip():fence=None
             continue
-        if fence is None:rows.append(line)
+        if not comment and mark:
+            fence=mark[1];continue
+        visible=[]
+        while line:
+            if comment:
+                _,end,line=line.partition('-->')
+                if not end:break
+                comment=False
+            else:
+                before,start,line=line.partition('<!--');visible.append(before)
+                if not start:break
+                comment=True
+        rows.append(''.join(visible))
     return '\n'.join(rows)
 
 
@@ -476,8 +486,8 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
     missing = [h for h in headings(author) if not matches_heading(h)]
     if missing: raise ValueError(kind + ': missing template section: ' + missing[0])
     # Fenced examples and syntax descriptions do not become unfinished project fields.
-    prose=[line for line in text.splitlines() if not any(x in line for x in ('REQUIRED_PLACEHOLDER', 'OPTIONAL_PLACEHOLDER'))]
-    pending = sorted(set(re.findall(r'\{\{([^{}\n]+)\}\}', '\n'.join(prose))))
+    pending = sorted(set(re.findall(r'\{\{([^{}\n]+)\}\}', text))
+                     - {'REQUIRED_PLACEHOLDER', 'OPTIONAL_PLACEHOLDER'})
     if fields['Status'] != 'draft' and pending: raise ValueError(kind + ': active/frozen document has unfilled required fields')
     return fields, pending
 
