@@ -469,7 +469,10 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
                     active_section = None
                 continue
             value = re.sub(r'^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?', '', line).strip().strip('`*_~').strip()
-            if markers.intersection(re.findall(r'<([^<>\n]+)>', value)):
+            # Literal prose is not another renderer pass; only an unresolved
+            # whole value (including list/format wrappers above) is a missing field.
+            marker = re.fullmatch(r'<([^<>\n]+)>', value)
+            if marker and marker[1] in markers:
                 raise ValueError(kind + ': Appendix M still contains unfilled required values in ' + section + ': ' + value)
             if active_section is not None and value:
                 required_sections[active_section] = True
