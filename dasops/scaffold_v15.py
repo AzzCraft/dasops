@@ -869,8 +869,11 @@ def install(root, suite, force=False):
 
 
 def _install_locked(root, suite, force=False):
-    root=Path(root).resolve();_,modules,_=suite_inputs(suite);source=modules['cadence-oss'];state=load(root/STATE)
+    root=Path(root).resolve();suite,modules,_=suite_inputs(suite);source=modules['cadence-oss'];state=load(root/STATE)
     if git(source,'rev-parse','HEAD')!=state['selectedSources']['runtime']['pinValue']:raise ValueError('install source differs from selected runtime')
+    selected=load(suite/'suite_version_closure.json')['refs']['verifyRuntime']
+    if selected!=state['selectedSources']['runtime']:
+        raise ValueError('install runtime reference differs: expected '+json.dumps(state['selectedSources']['runtime'],sort_keys=True)+', observed '+json.dumps(selected,sort_keys=True))
     if resource_manifest(source)!=state['resourceDigests']:raise ValueError('install resources differ from planned runtime')
     target=root/VENDOR
     if target.exists() and not force:raise ValueError('runtime already installed; use --force explicitly')
