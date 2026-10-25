@@ -13,9 +13,12 @@ from dasops.vendor import SUPPORTED_PUBLIC_TIERS, build_install_cadence_command
 def _write_temp_bytes(label: str, data: bytes) -> Path:
     """Persist Streamlit uploaded bytes to a temp file and return its path."""
     tmp = tempfile.NamedTemporaryFile(delete=False, prefix="dasops_", suffix=f"_{label}.md")
-    tmp.write(data)
-    tmp.flush()
-    tmp.close()
+    try:
+        with tmp:
+            tmp.write(data)
+    except BaseException:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
     return Path(tmp.name)
 
 
@@ -93,8 +96,11 @@ This physical isolation prevents AI agents from accidentally running/modifying t
         if not dest.strip():
             st.error("Please provide a destination directory.")
             return
-        if master_file is None or (standard_release == "1.4.0" and ui_file is None):
-            st.error("Please upload BOTH master_doc.md and ui_spec.md.")
+        if master_file is None:
+            st.error("Please upload master_doc.md.")
+            return
+        if standard_release == "1.4.0" and ui_file is None:
+            st.error("Standard 1.4 requires ui_spec.md.")
             return
 
         if standard_release == "1.5.0-beta.1" and not selected_suite.strip():
@@ -122,13 +128,13 @@ This physical isolation prevents AI agents from accidentally running/modifying t
             except ValueError as exc:
                 st.error(str(exc))
                 return
-        master_path = _write_temp_bytes("master_doc", master_file.getvalue())
-        ui_path = _write_temp_bytes("ui_spec", ui_file.getvalue()) if ui_file else None
-        headless_path = _write_temp_bytes("headless", headless_file.getvalue()) if headless_file else None
-        context_path = _write_temp_bytes("context", context_file.getvalue()) if context_file else None
-        extension_path = _write_temp_bytes("extension", extension_file.getvalue()) if extension_file else None
-
+        master_path = ui_path = headless_path = context_path = extension_path = None
         try:
+            master_path = _write_temp_bytes("master_doc", master_file.getvalue())
+            ui_path = _write_temp_bytes("ui_spec", ui_file.getvalue()) if ui_file else None
+            headless_path = _write_temp_bytes("headless", headless_file.getvalue()) if headless_file else None
+            context_path = _write_temp_bytes("context", context_file.getvalue()) if context_file else None
+            extension_path = _write_temp_bytes("extension", extension_file.getvalue()) if extension_file else None
             out = create_product_repo(
                 factory_root=factory_root,
                 dest_dir=dest_path,
@@ -173,7 +179,7 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 +
                 "- Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof."
             )
-        except (SystemExit, RuntimeError) as e:
+        except (SystemExit, RuntimeError, ValueError, OSError) as e:
             st.error(str(e))
         except Exception as e:
             st.exception(e)

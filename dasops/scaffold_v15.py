@@ -97,6 +97,16 @@ def file_ref(path):
     return dict(kind='file', uri=path, pinType='manifest', pinValue=path, floating=False)
 
 
+def check_extension_manifest(data, schema_path, schema=None):
+    value = json.loads(data, object_pairs_hook=_pairs)
+    if not isinstance(value, dict) or value.get('standardManifestVersion') != EDITION:
+        raise ValueError('extension manifest edition differs')
+    schema_check(value, schema_path, schema)
+    if any(identifier == 'org.example.project' or identifier.startswith('org.example.project.')
+           for item in value['extensions'] for identifier in (item['name'], item['namespace'])):
+        raise ValueError('example extension is not a project fact')
+
+
 def product_manual(template, document_paths, has_extensions):
     """Keep shared workflow guidance, with this product's paths and 1.5 commands."""
     before, marker, rest = template.partition('- System truth\n')
@@ -171,7 +181,43 @@ the actual UI document set, independently of the native ui.enabled setting.
 Headless products do not require that UI command. Failed or unexecuted required
 checks cannot produce an overall full pass. Creation and verification never
 grant adoption approval or reference qualification.
+
+CI preparation:
+
+The generated checkout uses fetch-depth: 0 so the locked C0 bootstrap commit
+remains reachable. For an existing shallow checkout, fetch its missing history
+with git fetch --unshallow origin; do not replace the lock's pin with HEAD.
+Before enabling full CI, configure the workflow's Python and Git versions to
+match tooling_lock.json, prepare the selected Suite workspace, and run the fixed
+installer above on the runner. The ignored local vendor installation is not
+included in a fresh checkout. Complete the documents and applicable product tests
+as well. The starter CI keeps full verification and will fail until these inputs
+are ready; a scaffold-only check is not a replacement for that full gate.
 ''')
+
+
+def verification_plan(template, document_paths):
+    before, entry_marker, rest = template.partition('## Verify entrypoints\n')
+    _, boundary_marker, rest = rest.partition('## Boundary checks (fail fast)\n')
+    strategy, evidence_marker, _ = rest.partition('## Evidence required in PR\n')
+    if not (entry_marker and boundary_marker and evidence_marker):
+        raise ValueError('verification plan template sections are missing')
+    ui = 'docs/ui_spec.md' in document_paths
+    return (before + '## Canonical documents\n\n'
+            + ''.join('- `' + path + '`\n' for path in document_paths)
+            + '\n' + entry_marker + '''
+| Area | Command | Notes |
+|---|---|---|
+| Structure | ./scripts/verify --scope scaffold | Structure and pending inputs only; not full verification |
+| System | ./scripts/verify | Required full scope: completed documents, matching toolchain, fixed runtime and applicable product tests |
+'''
+            + ('| Frontend | ./scripts/verify-frontend | Required by full for this UI/mixed product; replace the failing stub with real product tests |\n' if ui else '')
+            + '\n' + boundary_marker + strategy + evidence_marker + '''
+- Record the exact commands, exit codes, scope, source/runtime identities and retained output paths.
+- List pending inputs and checks that failed or were not run; a scaffold pass is not a full pass.
+'''
+            + ('- Record the actual UI test results. Screenshots or visual baselines are required only when the product test plan specifies them; file presence alone does not verify UI behavior.\n' if ui else '')
+            + '- These checks do not grant adoption approval or reference qualification.\n')
 
 
 def git(root, *args):
@@ -331,15 +377,25 @@ def author_section(entry, source):
 
 def document_prose(text):
     """Visible Markdown for metadata, headings, pending fields and references."""
-    rows=[];fence=None
-    text = re.sub(r'<!--.*?(?:-->|\Z)', lambda m: '\n' * m[0].count('\n'), text, flags=re.S)
+    rows=[];fence=None;comment=False
     for line in text.splitlines():
         mark=re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$',line)
-        if mark:
-            if fence is None:fence=mark[1]
-            elif mark[1][0]==fence[0] and len(mark[1])>=len(fence) and not mark[2].strip():fence=None
+        if fence is not None:
+            if mark and mark[1][0]==fence[0] and len(mark[1])>=len(fence) and not mark[2].strip():fence=None
             continue
-        if fence is None:rows.append(line)
+        if not comment and mark:
+            fence=mark[1];continue
+        visible=[]
+        while line:
+            if comment:
+                _,end,line=line.partition('-->')
+                if not end:break
+                comment=False
+            else:
+                before,start,line=line.partition('<!--');visible.append(before)
+                if not start:break
+                comment=True
+        rows.append(''.join(visible))
     return '\n'.join(rows)
 
 
@@ -413,6 +469,8 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
                     active_section = None
                 continue
             value = re.sub(r'^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?', '', line).strip().strip('`*_~').strip()
+            # Literal prose is not another renderer pass; only an unresolved
+            # whole value (including list/format wrappers above) is a missing field.
             marker = re.fullmatch(r'<([^<>\n]+)>', value)
             if marker and marker[1] in markers:
                 raise ValueError(kind + ': Appendix M still contains unfilled required values in ' + section + ': ' + value)
@@ -430,8 +488,8 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
     missing = [h for h in headings(author) if not matches_heading(h)]
     if missing: raise ValueError(kind + ': missing template section: ' + missing[0])
     # Fenced examples and syntax descriptions do not become unfinished project fields.
-    prose=[line for line in text.splitlines() if not any(x in line for x in ('REQUIRED_PLACEHOLDER', 'OPTIONAL_PLACEHOLDER'))]
-    pending = sorted(set(re.findall(r'\{\{([^{}\n]+)\}\}', '\n'.join(prose))))
+    pending = sorted(set(re.findall(r'\{\{([^{}\n]+)\}\}', text))
+                     - {'REQUIRED_PLACEHOLDER', 'OPTIONAL_PLACEHOLDER'})
     if fields['Status'] != 'draft' and pending: raise ValueError(kind + ': active/frozen document has unfilled required fields')
     return fields, pending
 
@@ -530,12 +588,9 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     if extension is None and 'local_extension_manifest.json' in master_refs:
         raise ValueError('Master references a missing extension manifest')
     if extension is not None:
-        extension_value=json.loads(extension)
-        if extension_value.get('standardManifestVersion')!=EDITION:raise ValueError('extension manifest edition differs')
-        schema_check(extension_value, standard / 'local_extension_manifest.schema.json',
-                     json.loads(standard_data['local_extension_manifest.schema.json'][0]))
+        check_extension_manifest(extension, standard / 'local_extension_manifest.schema.json',
+                                 json.loads(standard_data['local_extension_manifest.schema.json'][0]))
         if 'local_extension_manifest.json' not in master_refs: raise ValueError('Master must reference supplied extension manifest')
-        if b'org.example.project' in extension: raise ValueError('example extension is not a project fact')
     suite_commit = git(suite, 'rev-parse', 'HEAD')
     suite_data = source_snapshot(suite, [*SUITE_FILES, 'schemas'], suite_commit)
     upstream = {name: suite_data[name][0] for name in SUITE_FILES}
@@ -579,6 +634,17 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     try:
         staged = Path(directory) / 'repo';staged.mkdir();write_snapshot(staged, templates)
         # Adapt only factory-owned guidance, before importing user documents.
+        document_paths = [path for path, _ in documents.values()]
+        for name in ('AGENTS.override.md', 'docs/guides/dont_blame_ai.md',
+                     'docs/policies/AGENT_OPERATING_MODEL.md', 'openspec/project.md',
+                     'openspec/specs/README.md'):
+            guidance = staged/name
+            guidance.write_text(re.sub(
+                r'(?m)^( *)- (`?)docs/master_doc\.md\2[^\n]*\n\1- \2docs/ui_spec\.md\2[^\n]*',
+                lambda match: '\n'.join(match[1]+'- '+match[2]+path+match[2] for path in document_paths),
+                guidance.read_text()))
+        plan = staged/'openspec/schemas/das-standard/templates/verification_plan.md'
+        plan.write_text(verification_plan(plan.read_text(), document_paths))
         if profile == 'headless' and 'ui_spec' not in documents:
             for guidance in staged.rglob('*.md'):
                 guidance.write_text(guidance.read_text().replace('docs/ui_spec.md','docs/headless_surface_note.md'))
@@ -605,6 +671,32 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
         manual.write_text(product_manual(manual.read_text(),
                           [path for path,_ in documents.values()],
                           (staged/'local_extension_manifest.json').is_file()))
+        (staged/'vendor/README.md').write_text('''# Vendor folder
+
+Run this from the product root to install the selected Cadence source and resources:
+
+```bash
+./scripts/install_cadence_vendor.sh --from-suite /path/to/validated-suite-workspace
+```
+
+This 1.5 installer reads the fixed Suite workspace; it does not clone a tip or
+copy a sibling release directory. Use --force explicitly to replace an existing
+installation. See [the product manual](../docs/USER_MANUAL.md) for prerequisites,
+identity checks, failure recovery and the finite verification scope.
+The canonical Standard entry remains STANDARD_REF.md.
+''')
+        for name, old_claim in (
+            ('AGENTS.override.md', '`./scripts/verify` enforces these rules; if it fails, fix the layout.'),
+            ('docs/policies/AGENT_OPERATING_MODEL.md', '`./scripts/verify` includes a deterministic layout check and will fail the build if it finds stray files.'),
+        ):
+            guidance = staged/name
+            guidance.write_text(guidance.read_text().replace(old_claim,
+                '`./scripts/verify` checks the documented scaffold and configured execution scope; '
+                'it does not scan for stray task plans or legacy delta folders. '
+                'Review these path rules explicitly; a verify pass does not prove them.'))
+        ci = staged/'.github/workflows/ci.yml'
+        ci.write_text(ci.read_text().replace('          persist-credentials: false\n',
+                      '          persist-credentials: false\n          fetch-depth: 0\n', 1))
         (staged/'STANDARD_REF.md').write_text('# Governing Standard\n\nDAS '+EDITION+'\n\n'+json.dumps(closure['refs']['standard'],sort_keys=True)+'\n')
         state=dict(standardRelease=EDITION, projectId=fields['Project slug'], interactionProfile=profile,
                    documents={kind:path for kind,(path,_) in documents.items()}, selectedSources=selected,
@@ -695,9 +787,7 @@ def verify(root, scope='scaffold'):
             identifiers.add(doc_fields['Doc ID'])
             pending.extend(kind+': '+item for item in items)
         if (root/'local_extension_manifest.json').exists():
-            extension_value=load(root/'local_extension_manifest.json')
-            if extension_value.get('standardManifestVersion')!=EDITION:raise ValueError('extension manifest edition differs')
-            schema_check(extension_value,base/'local_extension_manifest.schema.json')
+            check_extension_manifest(read(root/'local_extension_manifest.json'),base/'local_extension_manifest.schema.json')
             if 'local_extension_manifest.json' not in master_refs:raise ValueError('extension manifest is not referenced')
         elif 'local_extension_manifest.json' in master_refs:raise ValueError('referenced extension manifest missing')
         upstream=root/'tooling/das/suite'
@@ -706,6 +796,7 @@ def verify(root, scope='scaffold'):
             schema_check(load(upstream/name),upstream/'schemas/das-standard'/SCHEMAS[name])
         original=load(upstream/'suite_version_closure.json');derived=load(root/'tooling/das/suite_version_closure.json');lock=load(root/'tooling_lock.json')
         schema_check(derived,base/'suite_version_closure.schema.json');schema_check(lock,base/'tooling_lock.schema.json')
+        check_runtime_selection(root,state)
         toolchain=check_toolchain(lock['toolchain'])
         pending.extend(toolchain['problems'])
         for name in ('refs','standardVersion','standardManifestVersion','suiteVersion','factoryVersion','verifyRuntimeVersion'):
@@ -737,7 +828,9 @@ def verify(root, scope='scaffold'):
                 run_frontend(root)
                 checks.append(dict(name='product-frontend-command',status='passed',command='scripts/verify-frontend'))
             result=subprocess.run([str(installed(root)),'verify','--profile','dev'],cwd=root,capture_output=True,text=True,check=False)
-            if result.returncode:raise ValueError('native core verification failed: '+result.stderr.strip())
+            if result.returncode:
+                detail='\n'.join(part.strip() for part in (result.stdout,result.stderr) if part.strip())
+                raise ValueError(f'native core verification failed (exit {result.returncode}): '+detail)
             checks.append(dict(name='native-core',status='passed',policyMetadataOnly=True))
     except (ValueError,OSError,KeyError,TypeError,subprocess.SubprocessError,yaml.YAMLError) as exc:problems.append(str(exc))
     return dict(ok=not problems,scope=scope,problems=problems,pendingItems=pending,checks=checks,toolchain=toolchain,
@@ -749,11 +842,24 @@ def run_frontend(root):
     read(command)
     if not os.access(command,os.X_OK):raise ValueError('product frontend command is not executable')
     result=subprocess.run([str(command)],cwd=root,capture_output=True,text=True,timeout=300,check=False)
-    if result.returncode:raise ValueError('product frontend checks failed: '+result.stderr.strip())
+    if result.returncode:
+        detail='\n'.join(part.strip() for part in (result.stdout,result.stderr) if part.strip())
+        raise ValueError(f'product frontend checks failed (exit {result.returncode}): '+detail)
+
+
+def check_runtime_selection(root,state):
+    expected=state['selectedSources']['runtime']
+    lock=load(root/'tooling_lock.json')
+    original=load(root/'tooling/das/suite/suite_version_closure.json')
+    derived=load(root/'tooling/das/suite_version_closure.json')
+    for observed in (lock['verifyRuntime'],original['refs']['verifyRuntime'],derived['refs']['verifyRuntime']):
+        if observed!=expected:
+            raise ValueError('product runtime selection differs: expected '+json.dumps(expected,sort_keys=True)+', observed '+json.dumps(observed,sort_keys=True))
 
 
 def installed(root):
-    state=load(root/STATE);base=root/VENDOR;record=load(base/'.dasops-install.json')
+    state=load(root/STATE);check_runtime_selection(root,state)
+    base=root/VENDOR;record=load(base/'.dasops-install.json')
     if record['runtime']!=state['selectedSources']['runtime']:
         raise ValueError('installed runtime source differs: expected '+json.dumps(state['selectedSources']['runtime'],sort_keys=True)+', observed '+json.dumps(record['runtime'],sort_keys=True))
     for path,expected in state['resourceDigests'].items():
@@ -787,8 +893,12 @@ def install(root, suite, force=False):
 
 
 def _install_locked(root, suite, force=False):
-    root=Path(root).resolve();_,modules,_=suite_inputs(suite);source=modules['cadence-oss'];state=load(root/STATE)
+    root=Path(root).resolve();suite,modules,_=suite_inputs(suite);source=modules['cadence-oss'];state=load(root/STATE)
+    check_runtime_selection(root,state)
     if git(source,'rev-parse','HEAD')!=state['selectedSources']['runtime']['pinValue']:raise ValueError('install source differs from selected runtime')
+    selected=load(suite/'suite_version_closure.json')['refs']['verifyRuntime']
+    if selected!=state['selectedSources']['runtime']:
+        raise ValueError('install runtime reference differs: expected '+json.dumps(state['selectedSources']['runtime'],sort_keys=True)+', observed '+json.dumps(selected,sort_keys=True))
     if resource_manifest(source)!=state['resourceDigests']:raise ValueError('install resources differ from planned runtime')
     target=root/VENDOR
     if target.exists() and not force:raise ValueError('runtime already installed; use --force explicitly')
