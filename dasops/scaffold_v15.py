@@ -784,6 +784,7 @@ def verify(root, scope='scaffold'):
             schema_check(load(upstream/name),upstream/'schemas/das-standard'/SCHEMAS[name])
         original=load(upstream/'suite_version_closure.json');derived=load(root/'tooling/das/suite_version_closure.json');lock=load(root/'tooling_lock.json')
         schema_check(derived,base/'suite_version_closure.schema.json');schema_check(lock,base/'tooling_lock.schema.json')
+        check_runtime_selection(root,state)
         toolchain=check_toolchain(lock['toolchain'])
         pending.extend(toolchain['problems'])
         for name in ('refs','standardVersion','standardManifestVersion','suiteVersion','factoryVersion','verifyRuntimeVersion'):
@@ -834,8 +835,19 @@ def run_frontend(root):
         raise ValueError(f'product frontend checks failed (exit {result.returncode}): '+detail)
 
 
+def check_runtime_selection(root,state):
+    expected=state['selectedSources']['runtime']
+    lock=load(root/'tooling_lock.json')
+    original=load(root/'tooling/das/suite/suite_version_closure.json')
+    derived=load(root/'tooling/das/suite_version_closure.json')
+    for observed in (lock['verifyRuntime'],original['refs']['verifyRuntime'],derived['refs']['verifyRuntime']):
+        if observed!=expected:
+            raise ValueError('product runtime selection differs: expected '+json.dumps(expected,sort_keys=True)+', observed '+json.dumps(observed,sort_keys=True))
+
+
 def installed(root):
-    state=load(root/STATE);base=root/VENDOR;record=load(base/'.dasops-install.json')
+    state=load(root/STATE);check_runtime_selection(root,state)
+    base=root/VENDOR;record=load(base/'.dasops-install.json')
     if record['runtime']!=state['selectedSources']['runtime']:
         raise ValueError('installed runtime source differs: expected '+json.dumps(state['selectedSources']['runtime'],sort_keys=True)+', observed '+json.dumps(record['runtime'],sort_keys=True))
     for path,expected in state['resourceDigests'].items():
@@ -870,6 +882,7 @@ def install(root, suite, force=False):
 
 def _install_locked(root, suite, force=False):
     root=Path(root).resolve();suite,modules,_=suite_inputs(suite);source=modules['cadence-oss'];state=load(root/STATE)
+    check_runtime_selection(root,state)
     if git(source,'rev-parse','HEAD')!=state['selectedSources']['runtime']['pinValue']:raise ValueError('install source differs from selected runtime')
     selected=load(suite/'suite_version_closure.json')['refs']['verifyRuntime']
     if selected!=state['selectedSources']['runtime']:
