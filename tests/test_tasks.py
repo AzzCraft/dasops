@@ -97,6 +97,45 @@ class TestParseTasksIndex(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "six columns"):
             parse_tasks_index(md)
 
+    def test_malformed_header_is_not_an_absent_index(self):
+        header = '| Task ID | Title | Owner | Status | Depends On | Verify Gate |\n|---|---|---|---|---|---|\n'
+        for column in ('Owner', 'Status', 'Title', 'Depends On', 'Verify Gate'):
+            malformed = header.replace(column, 'Wrong column') + '| A | work | - | TODO | - | true |\n'
+            with self.subTest(column=column), self.assertRaisesRegex(ValueError, 'columns.*line 1'):
+                parse_tasks_index(malformed)
+
+    def test_header_label_can_still_be_a_task_id(self):
+        text = ('| Task ID | Title | Owner | Status | Depends On | Verify Gate |\n'
+                '|---|---|---|---|---|---|\n| Task ID | work | worker | DONE | - | true |\n')
+        rows = parse_tasks_index(text)
+        self.assertEqual([(row.task_id, row.status) for row in rows], [('Task ID', 'DONE')])
+
+    def test_separator_like_task_id_is_not_discarded(self):
+        text = ('| Task ID | Title | Owner | Status | Depends On | Verify Gate |\n'
+                '|---|---|---|---|---|---|\n| ---A | pending | - | TODO | - | true |\n'
+                '| B | finished | worker | DONE | - | true |\n')
+        rows = parse_tasks_index(text)
+        self.assertEqual([(row.task_id, row.status) for row in rows], [('---A', 'TODO'), ('B', 'DONE')])
+        with TemporaryDirectory() as temp:
+            change = Path(temp);path = change/'tasks.md';path.write_text(text)
+            self.assertEqual(artifact_status(change, [Artifact('execution-plan', 'tasks.md', [])]),
+                             {'execution-plan': 'BLOCKED'})
+            self.assertEqual(path.read_text(), text)
+
+    def test_malformed_index_cannot_hide_behind_a_done_index(self):
+        header = '| Task ID | Title | Owner | Status | Depends On | Verify Gate |\n|---|---|---|---|---|---|\n'
+        bad = header.replace('Owner', 'Wrong column')+'| A | unfinished | - | TODO | - | true |\n'
+        done = header+'| B | finished | worker | DONE | - | true |\n'
+        for text in (bad+'\n'+done, done+'\n'+bad):
+            with self.subTest(text=text), self.assertRaisesRegex(ValueError, 'ambiguous'):
+                parse_tasks_index(text)
+            with TemporaryDirectory() as temp:
+                change = Path(temp)
+                path = change/'tasks.md';path.write_text(text)
+                with self.assertRaisesRegex(SystemExit, 'ambiguous'):
+                    artifact_status(change, [Artifact('execution-plan', 'tasks.md', [])])
+                self.assertEqual(path.read_text(), text)
+
 
 # ---------------------------------------------------------------------------
 # find_task_section
@@ -439,7 +478,7 @@ class TestReviewedTaskMarkdown(unittest.TestCase):
         example = SAMPLE_TASKS_MD.replace("T-001", "EXAMPLE")
         text = "~~~markdown\n" + example + "~~~\n\n" + active
         rows = parse_tasks_index(text)
-        self.assertEqual(rows[0].title, r"First \| task")
+        self.assertEqual(rows[0].title, "First | task")
         self.assertEqual(rows[0].owner, "alice")
         updated, _ = update_tasks_md_text(text, "T-001", "carol", "IN_PROGRESS")
         self.assertTrue(updated.startswith("~~~markdown\n" + example + "~~~\n"))

@@ -56,9 +56,20 @@ Requirement -> Contract -> Verify gate
 System-level verify commands.
 
 - `./scripts/verify`
+- `./scripts/verify --scope scaffold` for local checks before Cadence setup;
+  its pending notice is not full verification.
 - `./scripts/verify-contracts`
 - `./scripts/verify-backend`
 - `./scripts/verify-frontend`
+
+Full verification requires an explicitly pinned Cadence installation and valid
+native configuration. Select a complete source commit, install with
+`scripts/install_cadence_vendor.sh --commit "$CADENCE_COMMIT"` and an explicit
+source matching `tooling_lock.json.verifyRuntime`, then run the full gate.
+The wrapper must reject changed installed resources,
+binary or runtime declarations, without PATH fallback. Installation failure must
+preserve the previous installation. Keep product-specific checks when updating
+these entrypoints; installation alone is not full DAS qualification.
 
 ## 11. Execution plan
 

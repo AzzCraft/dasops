@@ -48,7 +48,11 @@ python3 -m dasops create --help >/dev/null
 python3 -m dasops lock-status --help >/dev/null
 python3 -m dasops govern --help >/dev/null
 
-python3 -m dasops template-audit --repo-root "$ROOT" --json >/dev/null
+template_audit_output="$(python3 -m dasops template-audit --repo-root "$ROOT" --json)" || {
+  template_audit_status=$?
+  printf '%s\n' "$template_audit_output" >&2
+  exit "$template_audit_status"
+}
 export DAS_STANDARD_ROOT="$ROOT/tests/fixtures/standard-indexes"
 
 manifest="tests/verification_manifest.json"

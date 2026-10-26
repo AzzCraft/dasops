@@ -170,6 +170,8 @@ def _snapshot(change: Path):
             raise state.StateError("inconsistent_task_state")
         locks[lock.task_id] = lock
     for row in rows:
+        if row.status not in {"TODO", "IN_PROGRESS", "DONE", "BLOCKED", "PROPOSED"}:
+            raise state.StateError(f"invalid_task_status: {row.task_id}: {row.status}")
         if row.status == "IN_PROGRESS" and row.task_id not in locks:
             raise state.StateError("inconsistent_task_state")
     return text, by_id, locks

@@ -109,7 +109,7 @@ class FactoryTemplateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo = self._create_repo(Path(tmp_dir))
             direct_verify = subprocess.run(
-                ["./scripts/verify"],
+                ["./scripts/verify", "--scope", "scaffold"],
                 cwd=repo,
                 check=False,
                 stdout=subprocess.PIPE,
@@ -119,7 +119,7 @@ class FactoryTemplateTests(unittest.TestCase):
             self.assertEqual(direct_verify.returncode, 0, direct_verify.stdout)
 
             verify = subprocess.run(
-                ["bash", "./scripts/verify"],
+                ["bash", "./scripts/verify", "--scope", "scaffold"],
                 cwd=repo,
                 check=False,
                 stdout=subprocess.PIPE,

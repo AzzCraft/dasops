@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-./scripts/verify
+./scripts/verify --scope scaffold
 echo "[FAIL] backend verify is intentionally fail-closed until repo-specific backend gates are implemented." >&2
 echo "Add backend-specific checks before enabling backend release claims." >&2
 exit 1

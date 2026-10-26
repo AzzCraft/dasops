@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -16,18 +16,27 @@ def build_install_cadence_command(
     org: str | None = None,
     use_ssh: bool = False,
     force: bool = False,
+    commit: str | None = None,
+    standard_release: str = "1.4.0",
 ) -> list[str]:
     if tier not in SUPPORTED_PUBLIC_TIERS:
         raise ValueError("Public Cadence installation supports only tier=oss")
     if from_suite and (git_base or org or use_ssh):
         raise ValueError("Choose a local Suite source or a remote source")
+    if standard_release == "1.4.0":
+        if not commit or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise ValueError("Legacy installation requires an explicit full Cadence commit")
+    elif standard_release != "1.5.0-beta.1" or commit:
+        raise ValueError("Unsupported edition or redundant commit; 1.5 uses the selected Suite pin")
     if from_suite:
         suite = Path(from_suite).expanduser().resolve()
-        if not suite.is_dir() or not ((suite / "suite_lock.json").is_file() or (suite.parent / "cadence-oss").is_dir()):
-            raise ValueError("Local source requires das-suite with sibling cadence-oss")
+        if not suite.is_dir() or not ((suite / "suite_lock.json").is_file() or (suite / "src/cadence-oss").is_dir() or (suite.parent / "cadence-oss").is_dir()):
+            raise ValueError("Local source requires a Suite workspace with src/cadence-oss or a sibling Cadence checkout")
     elif not (git_base and git_base.strip()) and not (org and org.strip()):
         raise ValueError("Provide --from-suite, --git-base or --org explicitly")
     cmd = ["bash", "./scripts/install_cadence_vendor.sh", "--tier", tier]
+    if commit:
+        cmd.extend(["--commit", commit])
     if from_suite:
         cmd.extend(["--from-suite", str(suite)])
     if git_base:
@@ -43,8 +52,8 @@ def build_install_cadence_command(
 
 def load_vendor_lock(path: str | Path) -> dict[str, Any]:
     """Load a tooling_lock.json as vendor specification."""
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    from .legacy_runtime import load
+    return load(Path(path))
 
 
 def validate_vendor_integrity(
@@ -83,7 +92,10 @@ def enforce_vendor_lock(repo_root: str | Path) -> list[str]:
     lock_path = Path(repo_root) / "tooling_lock.json"
     if not lock_path.exists():
         return ["tooling_lock.json not found"]
-    vendor_lock = load_vendor_lock(lock_path)
+    try:
+        vendor_lock = load_vendor_lock(lock_path)
+    except (OSError, ValueError, TypeError) as exc:
+        return [f"Invalid tooling_lock.json: {exc}"]
     if vendor_lock.get("standardManifestVersion") == "1.5.0-beta.1":
         from .scaffold_v15 import STATE, installed as check_installed, load
         try:
@@ -92,6 +104,13 @@ def enforce_vendor_lock(repo_root: str | Path) -> list[str]:
             if vendor_lock.get("verifyRuntime") != selected_runtime:
                 return ["tooling_lock.json verifyRuntime differs from selected Suite runtime"]
             check_installed(root)
+            return []
+        except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+            return [str(exc)]
+    if vendor_lock.get("standardManifestVersion") == "1.4.0":
+        from .legacy_runtime import installed as check_installed
+        try:
+            check_installed(repo_root)
             return []
         except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as exc:
             return [str(exc)]

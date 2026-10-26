@@ -91,6 +91,7 @@ This physical isolation prevents AI agents from accidentally running/modifying t
     )
     cadence_org = st.text_input("Override org", value="")
     cadence_ssh = st.checkbox("Use SSH Git URLs", value=False)
+    cadence_commit = st.text_input("Cadence commit (full 40-character SHA, required for 1.4 installation)", value="") if standard_release == "1.4.0" else None
 
     if st.button("Create product repo"):
         if not dest.strip():
@@ -119,6 +120,8 @@ This physical isolation prevents AI agents from accidentally running/modifying t
         if install_cadence:
             try:
                 vendor_cmd = build_install_cadence_command(
+                    commit=cadence_commit.strip() if cadence_commit is not None else None,
+                    standard_release=standard_release,
                     tier=cadence_tier,
                     from_suite=selected_suite.strip() if standard_release == "1.5.0-beta.1" else (cadence_suite_path.strip() if cadence_source_mode == "From DAS Suite" else None),
                     git_base=cadence_git_base.strip() if standard_release == "1.4.0" and cadence_source_mode == "Clone from Git base" else None,
@@ -136,6 +139,7 @@ This physical isolation prevents AI agents from accidentally running/modifying t
             context_path = _write_temp_bytes("context", context_file.getvalue()) if context_file else None
             extension_path = _write_temp_bytes("extension", extension_file.getvalue()) if extension_file else None
             out = create_product_repo(
+                runtime_commit=cadence_commit.strip() if install_cadence and standard_release == "1.4.0" else None,
                 factory_root=factory_root,
                 dest_dir=dest_path,
                 master_doc_path=master_path,
@@ -162,7 +166,7 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 else:
                     st.success("Cadence installed under vendor/cadence")
                 st.code(result.stdout or "", language="bash")
-            st.code(f"cd {shlex.quote(str(out))}\n./scripts/verify", language="bash")
+            st.code(f"cd {shlex.quote(str(out))}\n./scripts/verify --scope scaffold", language="bash")
             # CLI-equivalent hints for GUI-vs-CLI parity.
             # These ensure the GUI user knows the corresponding CLI commands.
             # Status values: TODO, IN_PROGRESS, DONE, BLOCKED, PROPOSED
@@ -174,6 +178,7 @@ This physical isolation prevents AI agents from accidentally running/modifying t
                 + ("- Check structure: `scripts/verify --scope scaffold`; complete documents and install the fixed runtime before `scripts/verify`\n"
                    "- UI projects must implement `scripts/verify-frontend`; the generated stub fails until real product tests are supplied\n"
                    if standard_release == "1.5.0-beta.1" else
+                   "- Check structure: `scripts/verify --scope scaffold`; full verify requires pinned Cadence installation and valid native configuration\n"
                    "- Verify sub-systems: `scripts/verify-backend`, `scripts/verify-frontend`\n"
                    "- Frontend gate checks matrix structure and evidence-file presence; visual comparison requires your product's actual UI tests\n")
                 +

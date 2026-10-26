@@ -154,21 +154,39 @@ Cadence provides deterministic verification and evidence artifacts.
 Vendor Cadence
 
 ```
-./scripts/install_cadence_vendor.sh --from-suite /path/to/DAS_TOOLS_v1_0_0/das-suite --tier oss
+./scripts/install_cadence_vendor.sh --from-suite /path/to/suite --commit "$CADENCE_COMMIT"
 ```
 
-When using a standalone release package, `--from-suite` must point to
-`<release-root>/das-suite`. Cadence is copied only from the public sibling
-release module `<release-root>/cadence-oss`.
+Set `CADENCE_COMMIT` to the full 40-character commit selected for your product.
+Local mode reads an independent Git checkout at `suite/src/cadence-oss` or the
+legacy sibling `cadence-oss`; only committed files at that SHA are installed.
+A source archive without Git identity is refused. Git, Go, Python and Linux
+`flock` are required. On creation, `dasops create --runtime-commit "$CADENCE_COMMIT"`
+records this selection. For an existing product, explicitly update only
+`tooling_lock.json.verifyRuntime` to `kind: git`,
+`uri: ./vendor/cadence/cadence-oss`, `pinType: commit`, `pinValue: <full SHA>`,
+`floating: false`. Installation refuses a missing or mismatched declaration;
+it does not rewrite the product lock for you.
 
 Or clone from a Git base:
 
 ```
-./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>
+./scripts/install_cadence_vendor.sh --git-base https://github.com/<org> --commit "$CADENCE_COMMIT"
 ```
 
 Clone mode is fail-closed: pass `--git-base`, `--org`, or set
-`DAS_SUITE_GIT_BASE`.
+`DAS_SUITE_GIT_BASE`, plus the full commit. The installer builds and verifies
+the selected binary before replacing the old installation. Use `--force` to
+replace explicitly; a failed build or identity check leaves the old installation
+untouched. Only registry resources, licenses, VERSION and the binary are installed;
+build sources, tests and Git databases are not retained in the product.
+Resources, binary and declared runtime are checked by `cadencew`
+on execution; PATH fallback and automatic rebuilding are disabled. Reinstall
+explicitly after changing the selected source or runtime declaration.
+The wrapper holds a shared guard during native execution; replacement waits.
+If replacement fails and another directory occupies the destination, the error
+prints the preserved previous-installation path. Inspect that backup and the
+occupied destination before restoring; automatic cleanup does not delete either.
 
 Run Cadence on this repo
 
@@ -186,7 +204,14 @@ For a ready synthetic example, use Cadence's public
 
 Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof.
 
-When Cadence is vendored under `vendor/cadence`, `./scripts/verify` also runs `./cadencew verify --profile dev`.
+Default `./scripts/verify` (also `--scope full`) requires the verified installation
+and runs `./cadencew verify --profile dev`; missing runtime or native failure is
+a failure. Use `./scripts/verify --scope scaffold` for local checks before setup;
+it explicitly reports Cadence execution pending. The generated CI uses full scope:
+add your pinned installation and native configuration setup before that gate.
+The ignored `vendor/cadence` resources and binary must be recreated on each runner.
+Old unrecorded installations need explicit pinned reinstall before the new wrapper
+can run them. These checks do not certify all DAS requirements.
 
 Evidence output is written to:
 

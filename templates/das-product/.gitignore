@@ -26,3 +26,7 @@ output/
 
 # Local cooperative task mutex and recovery journal (never versioned).
 **/.dasops-local/
+
+# Rebuild fixed runtime installations locally; do not commit Git clones/binaries.
+vendor/cadence/
+.cadence/

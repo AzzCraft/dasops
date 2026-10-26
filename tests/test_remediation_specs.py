@@ -98,7 +98,7 @@ class RemediationSpecTests(unittest.TestCase):
             lock_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
             verify = subprocess.run(
-                ["bash", "scripts/verify"],
+                ["bash", "scripts/verify", "--scope", "scaffold"],
                 cwd=repo,
                 check=False,
                 capture_output=True,
@@ -167,7 +167,7 @@ class RemediationSpecTests(unittest.TestCase):
             )
 
             baseline = subprocess.run(
-                ["bash", "scripts/verify"], cwd=repo, check=False,
+                ["bash", "scripts/verify", "--scope", "scaffold"], cwd=repo, check=False,
                 capture_output=True, text=True,
             )
             self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
@@ -176,7 +176,7 @@ class RemediationSpecTests(unittest.TestCase):
             master_doc = repo / "docs" / "master_doc.md"
             master_doc.write_text(master_doc.read_text(encoding="utf-8") + "\nTBD\n", encoding="utf-8")
             result = subprocess.run(
-                ["bash", "scripts/verify"],
+                ["bash", "scripts/verify", "--scope", "scaffold"],
                 cwd=repo,
                 check=False,
                 capture_output=True,

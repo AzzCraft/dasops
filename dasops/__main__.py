@@ -228,6 +228,7 @@ def main(argv=None) -> int:
     p_create.add_argument("--ui-spec", required=False, help="Path to ui_spec.md")
     p_create.add_argument("--standard-release", default="1.4.0", choices=["1.4.0", "1.5.0-beta.1"])
     p_create.add_argument("--from-suite", help="Fixed, synced Suite workspace for 1.5")
+    p_create.add_argument("--runtime-commit", help="Explicit full Cadence commit for a new 1.4 product's runtime declaration")
     p_create.add_argument("--headless-note")
     p_create.add_argument("--context-pack")
     p_create.add_argument("--extension-manifest")
@@ -525,6 +526,7 @@ def main(argv=None) -> int:
                 master_doc_path=Path(args.master_doc).expanduser().resolve(),
                 ui_spec_path=Path(args.ui_spec).expanduser().resolve() if args.ui_spec else None,
                 standard_release=args.standard_release,
+                runtime_commit=args.runtime_commit,
                 from_suite=Path(args.from_suite) if args.from_suite else None,
                 headless_note_path=Path(args.headless_note) if args.headless_note else None,
                 context_pack_path=Path(args.context_pack) if args.context_pack else None,

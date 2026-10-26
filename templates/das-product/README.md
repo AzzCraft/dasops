@@ -20,7 +20,8 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
     - `task_locks/` (anti-collision locks, e.g. `T-001.lock`)
 
 - **Verification gates**
-  - `./scripts/verify` (minimum checks; expand per repo)
+  - `./scripts/verify` (full checks, including verified local Cadence; requires installation and valid native configuration)
+  - `./scripts/verify --scope scaffold` (local checks only; reports Cadence execution pending)
   - `./scripts/verify-backend`, `./scripts/verify-contracts` (fail-closed gates until repo-specific evidence exists)
   - `./scripts/verify-frontend` (fail-closed matrix/file-presence check requiring `artifacts/frontend/visualMatrix.json` to match `openspec/schemas/das-standard/visual_matrix.schema.json`, plus `artifacts/frontend/baseline/` and `artifacts/frontend/screenshots/`)
   - Frontend products need actual visual regression and baseline ratchet tests; this helper checks only matrix structure and non-empty directories. Main verify selects it via boolean `ui.enabled` or explicit `--frontend`.
@@ -38,14 +39,14 @@ This repository was scaffolded using **DAS + OpenSpec Factory**.
 - **Cadence integration hooks**
   - `cadence.yaml`
   - `cadencew`
-  - `./scripts/install_cadence_vendor.sh --from-suite <release-root>/das-suite --tier oss` (optional; copies the public sibling `<release-root>/cadence-oss` module)
-  - `./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>` (optional clone mode; fail-closed unless you pass `--git-base`, `--org`, or set `DAS_SUITE_GIT_BASE`)
+  - `./scripts/install_cadence_vendor.sh --from-suite /path/to/suite --commit "$CADENCE_COMMIT"` (full 40-character commit; Suite src layout or an independent sibling Git checkout)
+  - `./scripts/install_cadence_vendor.sh --git-base https://github.com/<org> --commit "$CADENCE_COMMIT"` (explicit source and commit; builds and verifies before replacing)
   - Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof.
 
 ## Start here
 
 1. Read `docs/USER_MANUAL.md`.
-2. Run `./scripts/verify`.
+2. Run `./scripts/verify --scope scaffold`. Install the chosen Cadence commit and configure its native inputs before the full `./scripts/verify` gate, including in CI. The wrapper never falls back to PATH.
 3. Create your first change folder:
 
 ```bash

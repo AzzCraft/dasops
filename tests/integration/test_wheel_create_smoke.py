@@ -144,7 +144,7 @@ def test_ops_001_installed_wheel_create_new_change_and_verify_smoke(tmp_path: Pa
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert (product / "openspec" / "changes" / "smoke" / "tasks.md").is_file()
 
-    proc = _run(["bash", "scripts/verify"], cwd=product)
+    proc = _run(["bash", "scripts/verify", "--scope", "scaffold"], cwd=product)
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
