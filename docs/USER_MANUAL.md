@@ -307,27 +307,33 @@ Step 1. Vendor Cadence
 Preferred when you already have a DAS Suite checkout:
 
 ```
-./scripts/install_cadence_vendor.sh --from-suite /path/to/das-suite --tier oss
+./scripts/install_cadence_vendor.sh --from-suite /path/to/das-suite --commit "$CADENCE_COMMIT"
 ```
 
 Or clone from a Git base:
 
 ```
-./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>
+./scripts/install_cadence_vendor.sh --git-base https://github.com/<org> --commit "$CADENCE_COMMIT"
 ```
+
+For a 1.4 product, select the full 40-character `CADENCE_COMMIT` and record it
+with `dasops create --runtime-commit` or explicitly update the product lock’s
+`verifyRuntime` to that fixed Git commit. Installation retains runtime resources
+and the binary, not a source checkout. Configure native inputs before full verify.
 
 Clone mode is fail-closed: pass `--git-base`, `--org`, or set
 `DAS_SUITE_GIT_BASE`.
 
-Step 2. Verify Cadence itself
+Step 2. Check the installed identity
 
 ```
-bash vendor/cadence/cadence-oss/scripts/verify
+./cadencew version --json
 ```
 
 Step 3. Run Cadence on the product repo
 
-Go is required if the cadence binary is not installed globally.
+Git, Go, Python and Linux flock are required during installation. The wrapper
+only executes the verified local binary and never selects a global PATH binary.
 
 From the product repo root:
 
@@ -344,7 +350,10 @@ example, use the separate headless flow in [OSS quickstart](quickstart/OSS_15_MI
 
 Cadence host-local stays `mode=host-launcher`; non-host profiles use `mode=runtime-exec` and fail closed unless `CADENCE_SANDBOX_CONTAINER_ADAPTER` or `CADENCE_SANDBOX_MICROVM_ADAPTER` returns verified runtime proof.
 
-If Cadence is vendored under `vendor/cadence`, `./scripts/verify` also runs this Cadence gate.
+Default `./scripts/verify` (also `./scripts/verify --scope full`) requires this
+installed Cadence gate to pass. Missing installation is a failure. For local
+checks before setup, use `./scripts/verify --scope scaffold`; it reports native
+execution pending and does not claim full verification.
 
 Evidence output is written to:
 
@@ -404,8 +413,8 @@ installation and checks have separate results; a saved draft remains a draft.
 From a generated 1.5 product, install with
 `./scripts/install_cadence_vendor.sh --from-suite /path/to/das-suite`.
 This builds the pinned source with Go and installs only its selected binary and
-runtime resources, not the entire Cadence repository. Do not run the legacy
-`vendor/cadence/cadence-oss/scripts/verify` command in this layout. Use
+runtime resources, not the entire Cadence repository. Do not run the source-repo
+verification script from inside the installed runtime directory. Use
 `./cadencew doctor` and `./cadencew verify --profile dev`; the launcher verifies
 the installed identity and never falls back to a global PATH binary.
 

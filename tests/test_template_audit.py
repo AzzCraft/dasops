@@ -169,7 +169,7 @@ class TemplateAuditTests(unittest.TestCase):
             vendor_readme = scratch / "templates" / "das-product" / "vendor" / "README.md"
             vendor_readme.write_text(
                 vendor_readme.read_text(encoding="utf-8").replace(
-                    "./scripts/install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>",
+                    './scripts/install_cadence_vendor.sh --git-base https://github.com/<org> --commit "$CADENCE_COMMIT"',
                     "./scripts/install_cadence_vendor.sh --from-suite <path> --tier oss",
                 ),
                 encoding="utf-8",
@@ -179,7 +179,7 @@ class TemplateAuditTests(unittest.TestCase):
             self.assertTrue(
                 any(
                     item.code == "command_parity_mismatch"
-                    and "install_cadence_vendor.sh --tier oss --git-base https://github.com/<org>" in item.message
+                    and 'install_cadence_vendor.sh --git-base https://github.com/<org> --commit "$CADENCE_COMMIT"' in item.message
                     for item in report.problem_details
                 ),
                 report.problem_details,
