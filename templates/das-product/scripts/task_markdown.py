@@ -18,7 +18,7 @@ def visible_lines(lines):
             yield line if fence is None else ''
 
 
-def cells(line):
+def cells(line, *, decode=True):
     text = line.strip()
     if not (text.startswith('|') and text.endswith('|')):
         raise ValueError('task table row must start and end with a pipe')
@@ -33,7 +33,7 @@ def cells(line):
     parts.append(current.strip())
     if len(parts) != 6:
         raise ValueError('task table requires exactly six columns; escape literal pipes')
-    return parts
+    return [re.sub(r"\\([\\|])", r"\1", part) for part in parts] if decode else parts
 
 
 def split_dependencies(value, known_ids=None):
@@ -80,19 +80,26 @@ def require_index_rows(rows):
 
 def table_rows(lines):
     visible = list(visible_lines(lines))
+    # Recognize a task table before validating its columns, but do not confuse
+    # a data row whose task ID is literally "Task ID" with another header.
     headers = [i for i, line in enumerate(visible)
-               if line.strip().startswith('| Task ID') and 'Owner' in line and 'Status' in line]
+               if (i == 0 or not visible[i - 1].lstrip().startswith('|'))
+               and re.match(r'^\s*\|\s*Task ID\s*\|', line, re.I)]
     if len(headers) > 1:
         raise ValueError('multiple active task indexes are ambiguous')
     if not headers:
         return []
+    header = headers[0]
+    names = [part.casefold() for part in cells(visible[header])]
+    if names[:4] != ["task id", "title", "owner", "status"] or names[4] not in {"depends on", "depends"} or names[5] not in {"verify gate", "gate"}:
+        raise ValueError(f"invalid task table columns at line {header + 1}")
+    if header + 1 >= len(visible) or not all(re.fullmatch(r":?-{3,}:?", part) for part in cells(visible[header + 1])):
+        raise ValueError(f"missing task table separator at line {header + 2}")
     rows = []
-    for i in range(headers[0] + 2, len(visible)):
+    for i in range(header + 2, len(visible)):
         line = visible[i].strip()
         if not line.startswith('|'):
             break
-        if re.match(r'^\|\s*-{3,}', line):
-            continue
         rows.append((i, cells(line)))
     validate_graph(rows)
     return rows

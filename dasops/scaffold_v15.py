@@ -31,6 +31,12 @@ SCHEMAS = {'suite_lock.json': 'suite_lock.schema.json',
            'suite_version_closure.json': 'suite_version_closure.schema.json',
            'tooling_lock.json': 'tooling_lock.schema.json',
            'local_extension_manifest.json': 'local_extension_manifest.schema.json'}
+DOCUMENT_PATHS = {
+    'master_doc': ('docs/master_doc.md',),
+    'ui_spec': ('docs/ui_spec.md', 'docs/ui_spec_appendix.md'),
+    'headless_surface_note': ('docs/headless_surface_note.md',),
+    'context_pack': ('docs/context_pack.md', 'docs/context-pack.md'),
+}
 VENDOR = 'vendor/cadence/cadence-oss'
 CHANGE_TEMPLATES = ('master_doc_delta.md', 'contracts_plan.md', 'verification_plan.md', 'tasks.md')
 ENTRY_FILES = ('STANDARD_REF.md', '.dasops_product_repo', 'openspec/config.yaml',
@@ -89,7 +95,10 @@ def local(root, ref):
 def schema_check(value, schema_path, schema=None):
     if schema is None: schema = load(schema_path)
     Draft202012Validator.check_schema(schema)
-    errors = list(Draft202012Validator(schema, registry=Registry(), format_checker=FormatChecker()).iter_errors(value))
+    checker = FormatChecker()
+    if "date-time" not in checker.checkers:
+        raise ValueError("missing date-time checker; install rfc3339-validator from requirements.txt")
+    errors = list(Draft202012Validator(schema, registry=Registry(), format_checker=checker).iter_errors(value))
     if errors: raise ValueError(schema_path.name + ': ' + errors[0].message)
 
 
@@ -196,13 +205,13 @@ are ready; a scaffold-only check is not a replacement for that full gate.
 ''')
 
 
-def verification_plan(template, document_paths):
+def verification_plan(template, document_paths, *, has_ui=None):
     before, entry_marker, rest = template.partition('## Verify entrypoints\n')
     _, boundary_marker, rest = rest.partition('## Boundary checks (fail fast)\n')
     strategy, evidence_marker, _ = rest.partition('## Evidence required in PR\n')
     if not (entry_marker and boundary_marker and evidence_marker):
         raise ValueError('verification plan template sections are missing')
-    ui = 'docs/ui_spec.md' in document_paths
+    ui = bool(set(DOCUMENT_PATHS['ui_spec']) & set(document_paths)) if has_ui is None else has_ui
     return (before + '## Canonical documents\n\n'
             + ''.join('- `' + path + '`\n' for path in document_paths)
             + '\n' + entry_marker + '''
@@ -345,7 +354,9 @@ def metadata(text):
             if 'document control' in heading[2].lower(): control_level = len(heading[1])
             elif control_level is not None and len(heading[1]) <= control_level: break
         if control_level is None: continue
-        match = re.match(r'^\s*-\s+\*\*([^*]+)\*\*:?\s*(.+)', line)
+        # A bullet containing a code/path value and "(recommended: ...)" is
+        # guidance, not another named metadata field.
+        match = re.match(r'^\s*-\s+([^:`]+):\s*(.+)', line.replace('**', ''))
         if match:
             key = re.sub(r'\s*\([^)]*\)', '', match[1].rstrip(':')).strip()
             value = re.sub(r'^\([^)]*\):\s*', '', match[2].strip())
@@ -377,24 +388,34 @@ def author_section(entry, source):
 
 def document_prose(text):
     """Visible Markdown for metadata, headings, pending fields and references."""
-    rows=[];fence=None;comment=False
-    for line in text.splitlines():
+    rows=[];fence=None;comment=False;code=None
+    lines = text.splitlines()
+    for row, line in enumerate(lines):
         mark=re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$',line)
         if fence is not None:
             if mark and mark[1][0]==fence[0] and len(mark[1])>=len(fence) and not mark[2].strip():fence=None
             continue
-        if not comment and mark:
+        if not comment and code is None and mark:
             fence=mark[1];continue
-        visible=[]
-        while line:
+        visible=[];index=0
+        while index < len(line):
             if comment:
-                _,end,line=line.partition('-->')
-                if not end:break
-                comment=False
+                end=line.find('-->',index)
+                if end < 0:break
+                comment=False;index=end+3
+            elif line[index]=='`':
+                end=index+1
+                while end<len(line) and line[end]=='`':end+=1
+                token=line[index:end]
+                if code == token:code=None
+                elif code is None:
+                    remaining=line[end:]+'\n'+'\n'.join(lines[row+1:])
+                    if re.search(r'(?<!`)'+re.escape(token)+r'(?!`)',remaining):code=token
+                visible.append(token);index=end
+            elif code is None and line.startswith('<!--',index):
+                comment=True;index+=4
             else:
-                before,start,line=line.partition('<!--');visible.append(before)
-                if not start:break
-                comment=True
+                visible.append(line[index]);index+=1
         rows.append(''.join(visible))
     return '\n'.join(rows)
 
@@ -402,6 +423,9 @@ def document_prose(text):
 def document_references(text):
     """Read whole local paths from prose/code spans and Markdown link targets."""
     text = document_prose(text)
+    # Canonical templates include recommended filenames beside unfilled fields.
+    # Those examples are not selected project references.
+    text = re.sub(r'\(recommended:\s*`[^`\n]+`\)', '', text, flags=re.I)
     paths = []
     def link(match):
         # Labels do not establish a reference to a different link destination.
@@ -409,11 +433,30 @@ def document_references(text):
         if target: paths.append(target.split()[0].strip('<>'))
         return ' '
     text = re.sub(r'!?\[[^\]\n]*\]\(([^)\n]*)\)', link, text)
-    paths.extend(re.findall(r'''(?<![\w./%+~:-])(?:docs/[^\s`<>()\[\]"',;*]+|local_extension_manifest\.json[^\s`<>()\[\]"',;*]*)''', text))
-    return {path.rstrip('.:!').split('#', 1)[0] for path in paths}
+    paths.extend(re.findall(r'''(?<![\w./%+~:-])(?:(?:\./)*docs/[^\s`<>()\[\]"',;*]+|local_extension_manifest\.json[^\s`<>()\[\]"',;*]*)''', text))
+    return {normalize_document_path(path.rstrip('.:!').split('#', 1)[0]) for path in paths}
 
 
-def document_check(kind, data, authors, *, project=None, master_profile=None, manifest=None):
+def normalize_document_path(value):
+    while value.startswith('./'):
+        value=value[2:]
+    return value
+
+
+def select_document_path(kind, master_refs, fields=None):
+    choices = set(DOCUMENT_PATHS[kind]) & master_refs
+    declared = (fields or {}).get('Canonical doc path')
+    if declared:
+        declared = normalize_document_path(declared)
+        if declared not in DOCUMENT_PATHS[kind] or declared not in choices:
+            raise ValueError(kind + ': declared path must be supported and referenced by Master')
+        return declared
+    if len(choices) != 1:
+        raise ValueError('Master must reference exactly one supported path for ' + kind + ': ' + ', '.join(DOCUMENT_PATHS[kind]))
+    return next(iter(choices))
+
+
+def document_check(kind, data, authors, *, project=None, master_profile=None, manifest=None, document_path=None):
     text = document_prose(data.decode('utf-8')); fields = metadata(text)
     required = manifest['requiredDocMetadata'][kind] if manifest is not None else ('Doc ID', 'Owner', 'Status', 'Governing standard')
     for key in required:
@@ -432,11 +475,11 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
         if fields.get('Doc family role') != 'canonical_entrypoint': raise ValueError('Master must be canonical_entrypoint')
         project = fields.get('Project slug', '')
         if not re.fullmatch(r'[a-z][a-z0-9-]{1,62}[a-z0-9]', project): raise ValueError('invalid Project slug')
-        if fields.get('Canonical doc path') != 'docs/master_doc.md': raise ValueError('Master DOC_PATH must be docs/master_doc.md')
+        if normalize_document_path(fields.get('Canonical doc path', '')) != 'docs/master_doc.md': raise ValueError('Master DOC_PATH must be docs/master_doc.md')
         if fields.get('Conformance profile') not in ('L0', 'L1', 'L2'): raise ValueError('invalid Conformance profile')
         if fields.get('Interaction profile') not in ('headless', 'standard_ui'):
             raise ValueError('supported Interaction profile: headless or standard_ui; HFVI is not supported')
-    elif 'Parent Master Doc' in fields and fields['Parent Master Doc'] != 'docs/master_doc.md':
+    elif 'Parent Master Doc' in fields and normalize_document_path(fields['Parent Master Doc']) != 'docs/master_doc.md':
         raise ValueError(kind + ': Parent Master Doc must be docs/master_doc.md')
     if kind == 'headless_surface_note' and fields.get('Interaction profile') != 'headless':
         raise ValueError('Headless Surface Note must declare headless')
@@ -444,8 +487,14 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
         raise ValueError('UI Spec must declare standard_ui')
     if project is not None and fields.get('Project slug', project) != project:
         raise ValueError(kind + ': Project slug differs from Master')
-    if kind == 'ui_spec' and fields.get('Canonical doc path', 'docs/ui_spec.md') != 'docs/ui_spec.md':
-        raise ValueError('UI Spec DOC_PATH must be docs/ui_spec.md')
+    if 'Canonical doc path' in fields:
+        declared=normalize_document_path(fields['Canonical doc path'])
+        if declared not in DOCUMENT_PATHS[kind] or (document_path is not None and declared != document_path):
+            raise ValueError(kind + ': Canonical doc path differs from output path')
+    def title(value):
+        value=re.sub(r'^#{1,6}\s+', '', value).strip().rstrip('#').strip()
+        value=re.sub(r'\s+\([^()]*\)\s*$', '', value)
+        return re.sub(r'^[0-9]+(?:\.[0-9]+)*\.?\s+', '', value).casefold()
     author = authors[kind]
     if kind in ('headless_surface_note', 'context_pack'):
         markers=set(re.findall(r'<([^<>\n]+)>', author))
@@ -456,6 +505,7 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
             if re.match(r'^#{1,6}\s+', line): section = line.lstrip('# ').strip()
             elif section is not None and re.fullmatch(r'\s*<[^<>\n]+>\s*', line):
                 required_sections[section] = False
+        section_keys = {title(name): name for name in required_sections}
         section = 'Document Control'
         active_section = None
         active_level = 0
@@ -463,8 +513,9 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
             heading = re.match(r'^(#{1,6})\s+', line)
             if heading:
                 section = line.lstrip('# ').strip()
-                if section in required_sections:
-                    active_section, active_level = section, len(heading[1])
+                required_section = section_keys.get(title(line))
+                if required_section is not None:
+                    active_section, active_level = required_section, len(heading[1])
                 elif len(heading[1]) <= active_level:
                     active_section = None
                 continue
@@ -479,14 +530,18 @@ def document_check(kind, data, authors, *, project=None, master_profile=None, ma
         for section, supplied in required_sections.items():
             if not supplied:
                 raise ValueError(kind + ': Appendix M requires visible content in ' + section)
-    actual_headings=headings(text)
-    marker=r'(\{\{[^{}\n]+\}\}|\[\[[^\[\]\n]+\]\])'
-    def matches_heading(template):
-        pattern=''.join('.+' if re.fullmatch(marker,part) else re.escape(part)
-                        for part in re.split(marker,template))
-        return any(re.fullmatch(pattern,actual) for actual in actual_headings)
-    missing = [h for h in headings(author) if not matches_heading(h)]
-    if missing: raise ValueError(kind + ': missing template section: ' + missing[0])
+    actual = [(len(h)-len(h.lstrip('#')), title(h)) for h in headings(text)]
+    required_sections = manifest['requiredSections'][kind] if manifest is not None else headings(author)[1:]
+    for required in required_sections:
+        if title(required) not in {h for _,h in actual}:
+            raise ValueError(kind + ': missing required section: ' + required)
+    for parent, children in (manifest or {}).get('requiredSubsections', {}).get(kind, {}).items():
+        start=next((i for i,(_,h) in enumerate(actual) if h==title(parent)), None)
+        if start is None:raise ValueError(kind + ': missing required section: ' + parent)
+        level=actual[start][0];end=next((i for i in range(start+1,len(actual)) if actual[i][0]<=level),len(actual))
+        for required in children:
+            if title(required) not in {h for _,h in actual[start+1:end]}:
+                raise ValueError(kind + ': missing required subsection: ' + parent + ' / ' + required)
     # Fenced examples and syntax descriptions do not become unfinished project fields.
     pending = sorted(set(re.findall(r'\{\{([^{}\n]+)\}\}', text))
                      - {'REQUIRED_PLACEHOLDER', 'OPTIONAL_PLACEHOLDER'})
@@ -513,7 +568,7 @@ def required_documents(fields, master_refs):
     required = {'headless_surface_note'} if fields['Interaction profile'] == 'headless' else {'ui_spec'}
     if fields['Conformance profile'] == 'L2': required.add('context_pack')
     for kind in ('headless_surface_note', 'ui_spec', 'context_pack'):
-        if 'docs/' + kind + '.md' in master_refs: required.add(kind)
+        if set(DOCUMENT_PATHS[kind]) & master_refs: required.add(kind)
     return required
 
 
@@ -580,9 +635,9 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
     for kind, source in inputs.items():
         if kind in required and source is None: raise ValueError('required document: ' + kind)
         if source is not None:
-            path = 'docs/' + kind + '.md'
-            if path not in master_refs: raise ValueError('Master must reference ' + path)
-            data = read(source); document_check(kind, data, authors, project=fields['Project slug'], master_profile=profile, manifest=manifest)
+            data = read(source)
+            path = select_document_path(kind, master_refs, metadata(data.decode()))
+            document_check(kind, data, authors, project=fields['Project slug'], master_profile=profile, manifest=manifest, document_path=path)
             documents[kind] = (path, data)
     extension = read(extension_manifest_path) if extension_manifest_path else None
     if extension is None and 'local_extension_manifest.json' in master_refs:
@@ -644,7 +699,7 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
                 lambda match: '\n'.join(match[1]+'- '+match[2]+path+match[2] for path in document_paths),
                 guidance.read_text()))
         plan = staged/'openspec/schemas/das-standard/templates/verification_plan.md'
-        plan.write_text(verification_plan(plan.read_text(), document_paths))
+        plan.write_text(verification_plan(plan.read_text(), document_paths, has_ui='ui_spec' in documents))
         if profile == 'headless' and 'ui_spec' not in documents:
             for guidance in staged.rglob('*.md'):
                 guidance.write_text(guidance.read_text().replace('docs/ui_spec.md','docs/headless_surface_note.md'))
@@ -652,6 +707,11 @@ def create(*, factory_root, dest_dir, master_doc_path, ui_spec_path=None,
         delta.write_text(delta.read_text().replace('./scripts/verify --mode backend','./scripts/verify'))
         (staged / 'docs/ui_spec.md').unlink(missing_ok=True)
         (staged / 'local_extension_manifest.json').unlink(missing_ok=True)
+        # Adapt remaining factory-owned path mentions before importing user bytes.
+        for guidance in [*staged.rglob('*.md'), *staged.rglob('*.yaml')]:
+            text=guidance.read_text()
+            for kind,(path,_) in documents.items():text=text.replace(DOCUMENT_PATHS[kind][0],path)
+            guidance.write_text(text)
         for path,data in documents.values(): (staged / path).write_bytes(data)
         if extension is not None: (staged/'local_extension_manifest.json').write_bytes(extension)
         for name,data in upstream.items():
@@ -712,8 +772,8 @@ The canonical Standard entry remains STANDARD_REF.md.
         doc_lines='\n'.join('    - '+path for path,_ in documents.values())
         for p in [staged/'openspec/config.yaml', staged/'openspec/schemas/das-standard/schema.yaml',
                   *(staged/'openspec/schemas/das-standard/templates').glob('*.md')]:
-            text=p.read_text();text=text.replace('    - docs/master_doc.md\n    - docs/ui_spec.md',doc_lines)
-            text=text.replace('        - docs/master_doc.md\n        - docs/ui_spec.md',doc_lines.replace('    -','        -'))
+            text=p.read_text();text=text.replace('    - docs/master_doc.md\n    - '+documents.get('ui_spec',('docs/ui_spec.md',))[0],doc_lines)
+            text=text.replace('        - docs/master_doc.md\n        - '+documents.get('ui_spec',('docs/ui_spec.md',))[0],doc_lines.replace('    -','        -'))
             text=text.replace('docs/ui_spec.md','docs/headless_surface_note.md') if profile=='headless' and 'ui_spec' not in documents else text
             p.write_text(text)
         (staged/'.dasops_product_repo').write_text('DAS 1.5 product scaffold\n')
@@ -782,7 +842,7 @@ def verify(root, scope='scaffold'):
         identifiers=set()
         for kind,path in docs.items():
             if kind!='master_doc' and path not in master_refs:raise ValueError('Master does not reference '+path)
-            doc_fields,items=document_check(kind,read(local(root,path)),authors,project=state['projectId'],master_profile=state['interactionProfile'],manifest=manifest)
+            doc_fields,items=document_check(kind,read(local(root,path)),authors,project=state['projectId'],master_profile=state['interactionProfile'],manifest=manifest,document_path=path)
             if doc_fields['Doc ID'] in identifiers:raise ValueError('duplicate document identity')
             identifiers.add(doc_fields['Doc ID'])
             pending.extend(kind+': '+item for item in items)
@@ -873,7 +933,7 @@ def installed(root):
     identity=json.loads(proc.stdout)
     expected=dict(binarySha256=record['binaryDigest'],releaseVersion=record['releaseVersion'],sourceModified=False,sourceRevision=record['runtime']['pinValue'])
     observed={key:identity.get(key) for key in expected}
-    if observed!=expected:
+    if observed!=expected or identity.get('sourceModified') is not False:
         raise ValueError('native binary/source identity differs: expected '+json.dumps(expected,sort_keys=True)+', observed '+json.dumps(observed,sort_keys=True))
     return binary
 
@@ -920,7 +980,7 @@ def _install_locked(root, suite, force=False):
         for path,expected in state['resourceDigests'].items():
             if digest(read(staged/path))!=expected:raise ValueError('staged resource changed')
         identity=json.loads(subprocess.check_output([str(binary),'version','--json'],text=True,timeout=10))
-        if identity['sourceModified'] or identity['sourceRevision']!=record['runtime']['pinValue'] or identity['releaseVersion']!=release or identity['binarySha256']!=record['binaryDigest']:
+        if identity['sourceModified'] is not False or identity['sourceRevision']!=record['runtime']['pinValue'] or identity['releaseVersion']!=release or identity['binarySha256']!=record['binaryDigest']:
             raise ValueError('built runtime identity differs; previous install retained')
         record['platform'] = {key:identity[key] for key in ('goos','goarch','goVersion')}
         write_json(staged/'.dasops-install.json',record)

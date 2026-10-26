@@ -104,7 +104,7 @@ Then:
 
 ```bash
 cd ~/projects/my-product
-./scripts/verify
+./scripts/verify --scope scaffold
 ```
 
 ### 3) Create a new product repo (GUI)
@@ -230,5 +230,63 @@ factory. A package installation must include those exact resources; a matching
 version string alone is insufficient. Creation and installation failures are
 reported separately; an install failure preserves the created project and old
 runtime. Upgrading DASOps does not automatically migrate an existing 1.4 repo.
+
+Newly generated 1.4 templates now also require an explicit fixed installation:
+
+```bash
+# CADENCE_COMMIT is the complete 40-character commit you selected.
+# On creation, pass --runtime-commit "$CADENCE_COMMIT" to dasops create.
+./scripts/install_cadence_vendor.sh --from-suite /path/to/suite --commit "$CADENCE_COMMIT"
+# Or use --git-base https://github.com/AzzCraft with the same --commit.
+./cadencew version --json
+./scripts/verify --scope full
+```
+
+The local source must be an independent Git checkout in `suite/src/cadence-oss`
+or the legacy sibling `cadence-oss`; source-only archives without Git identity
+are refused. The installer checks out the exact commit, builds and verifies its
+binary before replacing the previous installation. Working-tree changes are not
+copied. Git, Go, Python and Linux `flock` are required for installation. Only
+registry-selected resources, licenses, VERSION and the binary are installed;
+compiler sources, tests and Git databases stay in the temporary build checkout.
+The wrapper checks the recorded resources, binary digest, native version identity and original
+runtime declaration before executing; it never selects a PATH binary or rebuilds
+silently. A changed resource, binary or runtime declaration requires explicit reinstall.
+Execution holds a shared installation guard; replacement waits for it to finish.
+
+For a new 1.4 project, `dasops create --runtime-commit "$CADENCE_COMMIT"` writes
+the matching `verifyRuntime` into `tooling_lock.json` (with the usual creation
+arguments). For an existing project, explicitly set that object to `kind: git`,
+`uri: ./vendor/cadence/cadence-oss`, `pinType: commit`, `pinValue: <full SHA>`,
+`floating: false`, preserving other product fields. The installer rejects a
+missing or mismatched declaration without changing it. The 1.5 path continues
+to use the selected Suite pin and rejects `--runtime-commit` overrides.
+If replacement cannot restore an old installation because the destination is
+occupied, the error identifies a preserved `previous` directory. Inspect both
+trees and resolve the collision before restoring; do not delete that backup.
+
+Default `scripts/verify` is full scope and fails without a verified installation
+or when Cadence fails. `--scope scaffold` runs local checks and explicitly leaves
+Cadence execution pending. Existing 1.4 native configuration still needs valid
+inputs for the selected Cadence version; installation alone does not create them.
+Configure the pinned install and native inputs before the product CI full gate.
+Upgrading DASOps does not modify existing projects. To opt in, review and update
+`scripts/install_cadence_vendor.sh`, `scripts/cadence_runtime.py`, `cadencew`,
+`scripts/verify` and the `verify-frontend`, `verify-backend`, `verify-contracts`
+sub-entrypoints together from the new template, preserving product-specific
+checks, documents and locks. Sub-entrypoints must request scaffold for their local
+prechecks; add local runtime outputs to `.gitignore`. Reinstall
+with the chosen commit (use `--force` to replace old vendor contents). Old unrecorded
+installations cannot be executed by the new wrapper. This changes installation
+and verification behavior explicitly; it does not migrate project documents to 1.5.
+
+For 1.5 documents, template wrapper titles and bold metadata formatting are optional;
+required sections, metadata values and profile applicability remain checked.
+Supported output aliases are `docs/ui_spec.md` or `docs/ui_spec_appendix.md`, and
+`docs/context_pack.md` or `docs/context-pack.md`. Select one path per document type
+in the Master references, and use the same UI Canonical doc path when declared.
+A leading `./` and a link fragment do not change the selected local file.
+Recommended filenames in unfilled template guidance do not select a document.
+
 
 For UI projects, implement the actual product tests in the generated `scripts/verify-frontend`. The initial entry fails explicitly; full verification calls it and reports its exit separately from native core checks. It must not call the top-level verify script recursively. Passing that command is not a claim that DASOps itself evaluated the UI.

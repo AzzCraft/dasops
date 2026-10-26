@@ -9,6 +9,9 @@ the tool twice in a row must produce zero edits the second time
 from __future__ import annotations
 
 import re
+import os
+import stat
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -95,7 +98,16 @@ def repair_tree(
             report.files_changed.append(str(md.relative_to(root)))
             report.rewrites.extend(edits)
             if write and new_text != text:
-                md.write_text(new_text, encoding="utf-8")
+                # Replace the directory entry; never truncate a shared inode.
+                mode = stat.S_IMODE(md.stat().st_mode)
+                fd, name = tempfile.mkstemp(prefix=".dasops-link-", dir=md.parent)
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                        stream.write(new_text)
+                        os.fchmod(stream.fileno(), mode)
+                    os.replace(name, md)
+                finally:
+                    Path(name).unlink(missing_ok=True)
     return report
 
 

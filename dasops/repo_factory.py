@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import sys
@@ -143,7 +144,10 @@ def create_product_repo_from_template(
     init_git: bool = True,
     overwrite: bool = False,
     change_empty: bool = False,
+    runtime_commit: str | None = None,
 ) -> Path:
+    if runtime_commit is not None and (not isinstance(runtime_commit, str) or not re.fullmatch(r"[0-9a-f]{40}", runtime_commit)):
+        raise ValueError("runtime_commit must be a full lowercase 40-character commit")
     if not template_dir.exists():
         raise SystemExit(
             "OPS-001 dasops create failed for command `dasops create`: "
@@ -182,6 +186,12 @@ def create_product_repo_from_template(
         staged = Path(tmp) / "repo"
         shutil.copytree(template_dir, staged)
         seed_machine_readable_artifacts(staged)
+        if runtime_commit is not None:
+            path = staged / "tooling_lock.json"
+            data = json.loads(path.read_text())
+            data['verifyRuntime'] = dict(kind='git', uri='./vendor/cadence/cadence-oss',
+                                         pinType='commit', pinValue=runtime_commit, floating=False)
+            path.write_text(json.dumps(data, indent=2) + '\n')
         init_repo(repo_root=staged, master_doc_bytes=master_bytes, ui_spec_bytes=ui_bytes)
         if change_id:
             new_change(repo_root=staged, change_id=change_id, intent=intent, empty=change_empty)
@@ -239,8 +249,11 @@ def create_product_repo(
     init_git: bool = True,
     overwrite: bool = False,
     change_empty: bool = False,
+    runtime_commit: str | None = None,
 ) -> Path:
     if standard_release == "1.5.0-beta.1":
+        if runtime_commit is not None:
+            raise ValueError("Standard 1.5 selects its runtime commit from Suite")
         from .scaffold_v15 import create
         return create(factory_root=factory_root, dest_dir=dest_dir, master_doc_path=master_doc_path,
                       ui_spec_path=ui_spec_path, from_suite=from_suite, headless_note_path=headless_note_path,
@@ -262,6 +275,7 @@ def create_product_repo(
         init_git=init_git,
         overwrite=overwrite,
         change_empty=change_empty,
+        runtime_commit=runtime_commit,
     )
 
 
@@ -452,6 +466,11 @@ def _validate_change_id(change_id: str) -> None:
 def new_change(repo_root: Path, change_id: str, intent: str = "", *, empty: bool = False) -> Path:
     _validate_change_id(change_id)
     change_dir = repo_root / "openspec" / "changes" / change_id
+    directories = [repo_root / "openspec", repo_root / "openspec/changes", change_dir, change_dir / "task_locks"]
+    files = [change_dir / name for name in ("master_doc_delta.md", "contracts_plan.md", "verification_plan.md", "tasks.md", "CHANGE.md", ".openspec.yaml", "task_locks/.gitkeep")]
+    for path in directories + files:
+        if path.is_symlink() or (path.exists() and not (path.is_dir() if path in directories else path.is_file())):
+            raise SystemExit(f"unsafe change destination: {path}")
     change_dir.mkdir(parents=True, exist_ok=True)
 
     if not empty:

@@ -47,6 +47,7 @@ REQUIRED_FILES = [
     REPO_ROOT / "prompts" / "worker.md",
     REPO_ROOT / "scripts" / "run_worker_codex.sh",
     REPO_ROOT / "scripts" / "install_cadence_vendor.sh",
+    REPO_ROOT / "scripts" / "cadence_runtime.py",
     REPO_ROOT / "cadencew",
     REPO_ROOT / "cadence.yaml",
     REPO_ROOT / "vendor" / "README.md",
@@ -383,14 +384,15 @@ def check_extension_manifest_schema() -> int:
     return 0
 
 
-def maybe_run_cadence() -> int:
+def run_cadence() -> int:
     cadence_dir = REPO_ROOT / "vendor" / "cadence"
     cadencew = REPO_ROOT / "cadencew"
-    if cadence_dir.exists() and cadencew.exists():
-        print("\n[CADENCE] vendor/cadence detected; running cadence verify --profile dev")
-        process = subprocess.run(["./cadencew", "verify", "--profile", "dev"], cwd=str(REPO_ROOT))
-        if process.returncode != 0:
-            return fail("Cadence verify failed")
+    if not cadence_dir.is_dir() or not cadencew.is_file():
+        return fail("full verification requires an installed fixed Cadence; use --scope scaffold for local checks")
+    print("\n[CADENCE] running verified local Cadence --profile dev")
+    process = subprocess.run(["./cadencew", "verify", "--profile", "dev"], cwd=str(REPO_ROOT))
+    if process.returncode != 0:
+        return fail("Cadence verify failed")
     return 0
 
 
@@ -426,6 +428,7 @@ def _checks(frontend: bool) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--frontend", action="store_true")
+    parser.add_argument("--scope", choices=("scaffold", "full"), default="full")
     args = parser.parse_args()
     # Same stable guard inode as DASOps writers; no read-side recovery.
     with ExitStack() as stack:
@@ -455,10 +458,13 @@ def main() -> int:
         rc = _checks(args.frontend)
     # Only snapshot reads need the shared guard. External verification must
     # allow heartbeats/writers; complete-task rechecks its subject before DONE.
+    if rc == 0 and args.scope == "full":
+        rc = run_cadence()
     if rc == 0:
-        rc = maybe_run_cadence()
-    if rc == 0:
-        print("\nAll verify checks passed.")
+        if args.scope == "scaffold":
+            print("\nScaffold checks passed; Cadence execution pending (not run in this scope).")
+        else:
+            print("\nFull checks passed, including Cadence execution; this is not complete DAS qualification.")
     return rc
 
 

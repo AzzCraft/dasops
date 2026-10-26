@@ -42,7 +42,7 @@ def test_generated_verifier_releases_state_guard_before_cadence(tmp_path):
     assert read_lock(change / "task_locks/T-002.lock").owner == "worker-b"
 
 
-@pytest.mark.parametrize("defect", ["owner-drift", "missing-lock", "misbound-id", "duplicate-task", "duplicate-key", "boolean-lease", "missing-index"])
+@pytest.mark.parametrize("defect", ["owner-drift", "missing-lock", "misbound-id", "duplicate-task", "duplicate-key", "boolean-lease", "missing-index", "malformed-header", "malformed-second-index"])
 def test_template_verifier_rejects_inconsistent_task_snapshot(tmp_path, defect):
     from dasops.locks import claim_task, complete_task
 
@@ -52,7 +52,7 @@ def test_template_verifier_rejects_inconsistent_task_snapshot(tmp_path, defect):
     tasks = change / "tasks.md"
     tasks.write_text("| Task ID | Title | Owner | Status | Depends on | Verify gate |\n"
                      "|---|---|---|---|---|---|\n"
-                     "| T-001 | Review | - | TODO | - | `./scripts/verify` |\n")
+                     "| T-001 | Review | - | TODO | - | `./scripts/verify --scope scaffold` |\n")
     lock = claim_task(repo_root=repo, change_id="recheck", task_id="T-001", owner="worker-a")
     task_bytes, lock_bytes = tasks.read_bytes(), lock.read_bytes()
     if defect == "owner-drift": tasks.write_bytes(task_bytes.replace(b"worker-a", b"worker-b"))
@@ -61,9 +61,13 @@ def test_template_verifier_rejects_inconsistent_task_snapshot(tmp_path, defect):
     elif defect == "duplicate-task": tasks.write_bytes(task_bytes + task_bytes.splitlines(keepends=True)[-1])
     elif defect == "duplicate-key": lock.write_bytes(lock_bytes + b"owner: worker-a\n")
     elif defect == "missing-index": tasks.unlink()
+    elif defect == "malformed-header": tasks.write_bytes(task_bytes.replace(b"| Owner |", b"| Wrong column |"))
+    elif defect == "malformed-second-index":
+        tasks.write_bytes(task_bytes + b'\n| Task ID | Title | Wrong column | Status | Depends on | Verify gate |\n'
+                          b'|---|---|---|---|---|---|\n| T-002 | ignored work | - | TODO | - | true |\n')
     else: lock.write_bytes(lock_bytes.replace(b"leaseSeconds: 3600", b"leaseSeconds: true"))
     before = (tasks.read_bytes() if tasks.exists() else None, lock.read_bytes() if lock.exists() else None)
-    result = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    result = subprocess.run(["bash", "scripts/verify", "--scope", "scaffold"], cwd=repo, text=True, capture_output=True)
     assert result.returncode != 0 and "[FAIL]" in result.stdout, result.stdout + result.stderr
     assert (tasks.read_bytes() if tasks.exists() else None, lock.read_bytes() if lock.exists() else None) == before
     # Restore the legitimate snapshot, then exercise the real completion gate.
@@ -72,7 +76,7 @@ def test_template_verifier_rejects_inconsistent_task_snapshot(tmp_path, defect):
     complete_task(repo_root=repo, change_id="recheck", task_id="T-001", owner="worker-a")
     # Historical DONE rows need not retain a lock.
     lock.unlink()
-    result = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    result = subprocess.run(["bash", "scripts/verify", "--scope", "scaffold"], cwd=repo, text=True, capture_output=True)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -82,7 +86,7 @@ def test_main_frontend_selection_is_explicit_and_helper_runs_once(tmp_path, enab
     config = yaml.safe_load((repo / "cadence.yaml").read_text())
     config["ui"]["enabled"] = enabled
     (repo / "cadence.yaml").write_text(yaml.safe_dump(config))
-    run = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    run = subprocess.run(["bash", "scripts/verify", "--scope", "scaffold"], cwd=repo, text=True, capture_output=True)
     if enabled is False:
         assert run.returncode == 0, run.stderr
         assert "frontend evidence not applicable" in run.stdout
@@ -97,7 +101,7 @@ def test_main_frontend_selection_is_explicit_and_helper_runs_once(tmp_path, enab
     (repo / "openspec/changes/broken/.dasops-local").mkdir(parents=True)
     (repo / "openspec/changes/broken/tasks.md").write_text("fixture")
     (repo / "openspec/changes/broken/.dasops-local/pending.json").write_text("{}")
-    run = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    run = subprocess.run(["bash", "scripts/verify", "--scope", "scaffold"], cwd=repo, text=True, capture_output=True)
     assert run.returncode != 0 and "recovery_required" in run.stdout + run.stderr
 
 
@@ -110,7 +114,7 @@ def test_vendor_public_tiers_and_source_validation(tmp_path):
     with pytest.raises(ValueError):
         build_install_cadence_command(tier="oss", from_suite=str(tmp_path / "missing"))
     assert SUPPORTED_PUBLIC_TIERS == ("oss",)
-    command = build_install_cadence_command(tier="oss", git_base="https://github.com/AzzCraft")
+    command = build_install_cadence_command(tier="oss", git_base="https://github.com/AzzCraft", commit="a" * 40)
     assert command[-2:] == ["--git-base", "https://github.com/AzzCraft"]
     script = Path(__file__).resolve().parents[1] / "templates/das-product/scripts/install_cadence_vendor.sh"
     run = subprocess.run(["bash", str(script), "--tier", "pro"], capture_output=True, text=True)
@@ -125,6 +129,7 @@ def test_gui_preflights_source_and_retains_created_product_on_install_failure(tm
     class UI:
         def text_input(self, label, value="", **kwargs):
             if label == "Product repo output directory": return str(product)
+            if label.startswith("Cadence commit"): return "a" * 40
             if label == "Git base": return "https://github.com/AzzCraft" if valid_source else ""
             return value
         def checkbox(self, label, value=False, **kwargs):
@@ -147,6 +152,7 @@ def test_gui_preflights_source_and_retains_created_product_on_install_failure(tm
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     def create(**kwargs):
+        assert kwargs["runtime_commit"] == "a" * 40
         if creation_failure == "nonempty": raise SystemExit("Destination is not empty")
         if creation_failure == "git-failure": raise RuntimeError("Git bootstrap failed; product creation is incomplete")
         product.mkdir()
@@ -176,7 +182,7 @@ def test_doctor_and_product_verify_refuse_same_invalid_state(tmp_path, defect):
     lock = claim_task(repo_root=repo, change_id="consistent", task_id="T-1", owner="alice")
     before_tasks, before_lock = tasks.read_bytes(), lock.read_bytes()
     assert not doctor(repo_root=repo).problems
-    control = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    control = subprocess.run(["bash", "scripts/verify", "--scope", "scaffold"], cwd=repo, text=True, capture_output=True)
     assert control.returncode == 0, control.stdout + control.stderr
     if defect.endswith("-link"):
         path = tasks if defect == "tasks-link" else lock
@@ -195,7 +201,7 @@ def test_doctor_and_product_verify_refuse_same_invalid_state(tmp_path, defect):
     assert report.problems, report
     status = inspect_lock(repo_root=repo, change_id="consistent", task_id="T-1", expect_owner="alice")
     assert not status["valid"]
-    result = subprocess.run(["bash", "scripts/verify"], cwd=repo, text=True, capture_output=True)
+    result = subprocess.run(["bash", "scripts/verify", "--scope", "scaffold"], cwd=repo, text=True, capture_output=True)
     assert result.returncode and "[FAIL]" in result.stdout, result.stdout + result.stderr
     assert "Traceback" not in result.stderr
     assert snapshot == (tasks.read_bytes(), lock.read_bytes())
@@ -207,7 +213,7 @@ def test_generated_verifier_executes_local_schemas_and_rejects_bad_yaml(tmp_path
     from dasops.doctor import run_doctor as doctor
     repo = copy_template_repo(str(tmp_path))
     def verify(*args):
-        return subprocess.run(["bash", "scripts/verify", *args], cwd=repo, text=True, capture_output=True)
+        return subprocess.run(["bash", "scripts/verify", "--scope", "scaffold", *args], cwd=repo, text=True, capture_output=True)
     assert verify().returncode == 0
     tooling = repo / "tooling_lock.json"
     original = tooling.read_text()
@@ -317,11 +323,11 @@ def test_registered_nested_worktree_is_not_a_stray_task_tree(tmp_path):
     change.mkdir()
     (change/'tasks.md').write_text('worker worktree only\n')
     assert not run_doctor(repo).problems
-    result=subprocess.run(['bash','scripts/verify'],cwd=repo,text=True,capture_output=True)
+    result=subprocess.run(['bash','scripts/verify','--scope','scaffold'],cwd=repo,text=True,capture_output=True)
     assert result.returncode==0,result.stdout+result.stderr
     stray=repo/'scratch/tasks.md';stray.parent.mkdir();stray.write_text('unregistered\n')
     assert any('stray tasks' in problem for problem in run_doctor(repo).problems)
-    result=subprocess.run(['bash','scripts/verify'],cwd=repo,text=True,capture_output=True)
+    result=subprocess.run(['bash','scripts/verify','--scope','scaffold'],cwd=repo,text=True,capture_output=True)
     assert result.returncode and 'stray tasks' in result.stdout
 
 
@@ -360,7 +366,7 @@ def test_reviewed_ids_drafts_owner_and_task_columns(tmp_path, capsys):
     assert cli('complete-task', '--change-id', change.name, '--task-id', '任务 一', '--owner', 'Worker B') == 0
     assert cli('claim-task', '--change-id', change.name, '--task-id', '任务 二', '--owner', 'Worker C') == 0
     rows = parse_tasks_index(tasks.read_text())
-    assert len(rows) == 2 and rows[0].status == 'DONE' and rows[0].title == 'left \\| right'
+    assert len(rows) == 2 and rows[0].status == 'DONE' and rows[0].title == 'left | right'
     assert rows[1].owner == 'Worker-C' and tasks.read_text().startswith(example)
 
 
@@ -464,10 +470,132 @@ def test_default_branch_handles_business_ids_and_scaffold_trace(tmp_path):
 def test_generated_verify_and_doctor_share_dependency_rejection(tmp_path):
     from dasops.doctor import run_doctor
     product = copy_template_repo(str(tmp_path))
-    positive = subprocess.run(['bash','scripts/verify'],cwd=product,text=True,capture_output=True)
+    positive = subprocess.run(['bash','scripts/verify','--scope','scaffold'],cwd=product,text=True,capture_output=True)
     assert positive.returncode == 0, positive.stdout + positive.stderr
     change = product/'openspec/changes/graph'; change.mkdir(); (change/'task_locks').mkdir()
     (change/'tasks.md').write_text('| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n| A | first | - | TODO | missing | true |\n')
-    negative = subprocess.run(['bash','scripts/verify'],cwd=product,text=True,capture_output=True)
+    negative = subprocess.run(['bash','scripts/verify','--scope','scaffold'],cwd=product,text=True,capture_output=True)
     assert negative.returncode != 0 and 'unknown dependency' in negative.stdout + negative.stderr
     assert any('unknown dependency' in issue for issue in run_doctor(product).problems)
+
+
+def test_four_repo_task_and_file_boundaries(tmp_path):
+    import os
+    from dasops.tasks import parse_tasks_index, extract_task_branch, extract_task_verify_cmds, update_tasks_md_text, validate_artifacts, Artifact
+    from dasops.repo_factory import new_change
+    from dasops.repair_doc_links import repair_tree
+    from dasops.lock import acquire
+    header = '| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n'
+    row = '| A | task | - | TODO | - | printf x \\| cat |\n'
+    with pytest.raises(ValueError, match='separator'):
+        parse_tasks_index(header.splitlines()[0]+'\n'+row)
+    assert parse_tasks_index(header+row)[0].verify_gate == 'printf x | cat'
+    example = '```md\n- Owner: example\n- Status: EXAMPLE\n- Branch: `wrong`\n- Verification: `false`\n```\n'
+    text = header+row+'\n### A\n'+example+'- Branch: `real`\n- Verification: `true`\n'
+    assert extract_task_branch(text, 'A') == 'real'
+    assert extract_task_verify_cmds(text, 'A') == ['true']
+    updated, changed = update_tasks_md_text(text, 'A', 'worker', 'IN_PROGRESS')
+    assert changed and example in updated and '- Owner: worker' in updated
+    assert parse_tasks_index(updated)[0].verify_gate == 'printf x | cat'
+    for bad in [text+'- Branch: `duplicate`\n', text+'\n### A\n']:
+        with pytest.raises(ValueError, match='ambiguous'): extract_task_branch(bad, 'A')
+    with pytest.raises(SystemExit, match='graph'):
+        validate_artifacts([Artifact('a','a.md',['b']),Artifact('b','b.md',['a'])])
+    validate_artifacts([Artifact('a','a.md',[]),Artifact('b','b.md',['a'])])
+    outside=tmp_path/'outside';outside.mkdir()
+    repo=tmp_path/'repo';repo.mkdir();(repo/'openspec').symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SystemExit, match='unsafe'): new_change(repo,'test',empty=True)
+    assert not list(outside.iterdir())
+    (repo/'openspec').unlink();change=repo/'openspec/changes/test';change.mkdir(parents=True)
+    (change/'CHANGE.md').symlink_to(outside/'absent')
+    with pytest.raises(SystemExit, match='unsafe'): new_change(repo,'test',empty=True)
+    assert sorted(p.name for p in change.iterdir())==['CHANGE.md']
+    standard=tmp_path/'standard';standard.mkdir();(standard/'x.md').write_text('target')
+    docs=tmp_path/'docs';docs.mkdir();doc=docs/'a.md';doc.write_text('[x](../standard-v1.4.0/x.md)')
+    alias=tmp_path/'alias';os.link(doc,alias);before=alias.read_bytes()
+    assert repair_tree(docs).edits==1 and alias.read_bytes()==before
+    assert doc.read_text()=='[x](../standard/x.md)' and repair_tree(docs).edits==0
+    locks=tmp_path/'locks';locks.mkdir();record=locks/'task.lock.json'
+    for raw in ['{', '{}', 'null', '{"taskId":"x"}']:
+        record.write_text(raw)
+        with pytest.raises(ValueError, match='invalid lock'): acquire(locks,'task','worker',now=1)
+        assert record.read_text()==raw
+    record.unlink();first=acquire(locks,'task','worker',now=1,lease_seconds=1)
+    assert acquire(locks,'task','worker2',now=3).lockToken != first.lockToken
+
+
+@pytest.mark.parametrize('level', [1, 2, 3])
+def test_task_details_stop_before_following_sections(tmp_path, level):
+    from dasops.locks import claim_task, complete_task, read_lock
+    from dasops.tasks import extract_task_branch, extract_task_verify_cmds, parse_tasks_index
+    repo = copy_template_repo(str(tmp_path))
+    change = repo/'openspec/changes/section-boundary';change.mkdir()
+    tasks = change/'tasks.md'
+    footer = ('#'*level+' Appendix\n- Owner: documentation\n- Status: REFERENCE\n'
+              '- Branch: `not-a-task-branch`\n- Verification: `false`\n')
+    example = '```md\n- Owner: example\n- Status: EXAMPLE\n```\n'
+    text = ('| Task ID | Title | Owner | Status | Depends on | Verify gate |\n'
+            '|---|---|---|---|---|---|\n| T-001 | actual task | - | TODO | - | python3 -c "pass" |\n'
+            '\n### T-001\n'+example+'\n'+footer)
+    tasks.write_text(text)
+    assert extract_task_branch(text, 'T-001') == ''
+    assert extract_task_verify_cmds(text, 'T-001') == []
+    lock = claim_task(repo_root=repo, change_id='section-boundary', task_id='T-001', owner='worker')
+    assert tasks.read_text().endswith(footer) and example in tasks.read_text()
+    complete_task(repo_root=repo, change_id='section-boundary', task_id='T-001', owner='worker')
+    after = tasks.read_text()
+    assert after.endswith(footer) and example in after
+    assert parse_tasks_index(after)[0].status == 'DONE'
+    assert read_lock(lock).status == 'DONE'
+
+
+def test_claim_unknown_status_preserves_task_bytes(tmp_path, capsys):
+    from dasops.__main__ import main
+    repo=copy_template_repo(str(tmp_path))
+    change=repo/'openspec/changes/status-check';change.mkdir()
+    tasks=change/'tasks.md'
+    tasks.write_text('| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n| A | task | - | MYSTERY | - | true |\n')
+    before=tasks.read_bytes()
+    assert main(['claim-task','--repo-root',str(repo),'--change-id','status-check','--task-id','A','--owner','worker','--json']) != 0
+    assert 'invalid_task_status' in capsys.readouterr().out
+    assert tasks.read_bytes()==before and not (change/'task_locks/A.lock').exists()
+
+
+def test_markdown_escape_reaches_real_completion_argv(tmp_path):
+    from dasops.locks import claim_task_with_result, complete_task
+    from dasops.tasks import parse_tasks_index
+    repo=copy_template_repo(str(tmp_path));change=repo/'openspec/changes/argv';change.mkdir()
+    (repo/'gate.py').write_text("import sys\nassert sys.argv[1] == 'a|b'\n")
+    assert subprocess.run([sys.executable,'gate.py','a|b'],cwd=repo).returncode==0
+    tasks=change/'tasks.md'
+    tasks.write_text('| Task ID | Title | Owner | Status | Depends on | Verify gate |\n|---|---|---|---|---|---|\n| A | task | - | TODO | - | `python3 gate.py "a\\|b"` |\n')
+    claim_task_with_result(repo_root=repo,change_id='argv',task_id='A',owner='worker')
+    complete_task(repo_root=repo,change_id='argv',task_id='A',owner='worker')
+    row=parse_tasks_index(tasks.read_text())[0]
+    assert row.status=='DONE' and row.verify_gate=='`python3 gate.py "a|b"`'
+    assert 'a\\|b' in tasks.read_text()
+
+
+@pytest.mark.parametrize('defect',['duplicate','identity'])
+def test_legacy_lock_rejects_ambiguous_identity_without_overwrite(tmp_path,defect):
+    from dasops.lock import acquire, release
+    lock=acquire(tmp_path,'task','owner',now=1,lease_seconds=1)
+    path=tmp_path/'task.lock.json';data=path.read_text()
+    if defect=='duplicate':data=data.replace('"heartbeatAt": 1','"heartbeatAt": 99999, "heartbeatAt": 1')
+    else:data=data.replace('"taskId": "task"','"taskId": "other"')
+    path.write_text(data)
+    with pytest.raises(ValueError,match='invalid lock record'):
+        acquire(tmp_path,'task','replacement',now=5)
+    assert path.read_text()==data
+    with pytest.raises(ValueError,match='invalid lock record'):release(tmp_path,'task',lock.lockToken)
+    assert path.read_text()==data
+
+def test_document_metadata_does_not_parse_path_guidance_as_fields():
+    from dasops.scaffold_v15 import metadata
+    import pytest
+    text = ('## Document Control\n- **Owner**: `owner`\n'
+            '- `same/path` (recommended: `docs/adr/`)\n'
+            '- `same/path` (recommended: `docs/changelog.md`)\n')
+    assert metadata(text)=={'Owner':'owner'}
+    with pytest.raises(ValueError,match='ambiguous document metadata: Owner'):
+        metadata(text+'- Owner: `other`\n')

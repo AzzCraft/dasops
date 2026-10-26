@@ -9,6 +9,7 @@ in the past) are automatically reclaimable.
 from __future__ import annotations
 
 import json
+import math
 import os
 import secrets
 import time
@@ -45,13 +46,33 @@ def _path(root: Path, task_id: str) -> Path:
 
 
 def _read(path: Path) -> Lock | None:
-    if not path.is_file():
+    if not os.path.lexists(path):
         return None
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"invalid lock record: {path}")
     try:
-        data = json.loads(path.read_text("utf-8"))
-    except json.JSONDecodeError:
-        return None
-    return Lock(**data)
+        def unique_fields(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"duplicate field: {key}")
+                result[key] = value
+            return result
+        data = json.loads(path.read_text("utf-8"), object_pairs_hook=unique_fields)
+        fields = {"taskId", "lockToken", "owner", "leaseSeconds", "acquiredAt", "heartbeatAt"}
+        if not isinstance(data, dict) or set(data) != fields:
+            raise ValueError("invalid fields")
+        if any(not isinstance(data[k], str) or not data[k].strip() for k in ("taskId", "lockToken", "owner")):
+            raise ValueError("invalid identity")
+        if path.name != data["taskId"] + ".lock.json":
+            raise ValueError("taskId does not match record filename")
+        if type(data["leaseSeconds"]) is not int or data["leaseSeconds"] <= 0:
+            raise ValueError("invalid lease")
+        if any(type(data[k]) not in (int, float) or not math.isfinite(data[k]) for k in ("acquiredAt", "heartbeatAt")):
+            raise ValueError("invalid timestamps")
+        return Lock(**data)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"invalid lock record {path}: {exc}") from exc
 
 
 def _write(path: Path, lock: Lock) -> None:

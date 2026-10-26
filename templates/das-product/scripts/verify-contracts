@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-./scripts/verify
+./scripts/verify --scope scaffold
 echo "[FAIL] contracts verify is intentionally fail-closed until contract schemas, fixtures, and compatibility gates are present." >&2
 exit 1

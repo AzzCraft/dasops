@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple
 
 import yaml
 from .repo_factory import default_factory_root
-from .task_markdown import table_rows, visible_lines, split_dependencies
+from .task_markdown import table_rows, visible_lines, split_dependencies, cells, validate_graph
 
 
 DRAFT_MARKER = "DASOPS:DRAFT"
@@ -83,6 +83,11 @@ def validate_artifacts(artifacts):
         if any(dep not in ids for dep in artifact.requires):
             raise SystemExit(f"Invalid artifact schema: {artifact.id} requires an unknown artifact")
 
+    try:
+        validate_graph([(i, [a.id, "", "", "", shlex.join(a.requires), ""]) for i, a in enumerate(artifacts)])
+    except ValueError as exc:
+        raise SystemExit(f"Invalid artifact schema: {exc}") from exc
+
 
 def parse_tasks_index(tasks_md: str) -> List[TaskRow]:
     return [TaskRow(*parts) for _, parts in table_rows(tasks_md.splitlines()) if parts[0]]
@@ -99,16 +104,20 @@ def find_task_section(md_lines: List[str], task_id: str) -> Optional[Tuple[int, 
     for index, line in enumerate(visible):
         matched = next((identity for identity, pattern in patterns if pattern.match(line)), None)
         if matched == task_id:
+            if start is not None:
+                raise ValueError(f"ambiguous details for task {task_id}")
             start = index
-            break
     if start is None:
         return None
 
     end = len(md_lines)
     for index in range(start + 1, len(md_lines)):
-        if re.match(r"^###\s+", visible[index]):
+        if re.match(r"^#{1,3}\s+", visible[index]):
             end = index
             break
+    for field in ("Owner", "Status", "Branch", "Verification"):
+        if sum(bool(re.match(rf"^-\s*{field}\s*:", line.lstrip())) for line in visible[start+1:end]) > 1:
+            raise ValueError(f"ambiguous {field} in task {task_id}")
     return start, end
 
 
@@ -118,8 +127,9 @@ def extract_task_branch(tasks_md: str, task_id: str) -> str:
     if section is None:
         return ""
     start, end = section
+    visible = list(visible_lines(lines))
     for index in range(start + 1, end):
-        stripped = lines[index].strip()
+        stripped = visible[index].strip()
         match = re.match(r"^-\s*Branch\s*:\s*(.*)$", stripped)
         if not match:
             continue
@@ -137,11 +147,12 @@ def extract_task_verify_cmds(tasks_md: str, task_id: str) -> List[str]:
     if section is None:
         return []
     start, end = section
+    visible = list(visible_lines(lines))
 
     verify_cmds: List[str] = []
     in_verification = False
     for index in range(start + 1, end):
-        raw = lines[index]
+        raw = visible[index]
         stripped = raw.strip()
 
         if re.match(r"^-\s*Verification\s*:\s*$", stripped) or re.match(
@@ -192,8 +203,9 @@ def extract_task_owner_status(tasks_md: str, task_id: str) -> Tuple[str, str]:
     if section is None:
         return owner, status
     start, end = section
+    visible = list(visible_lines(lines))
     for index in range(start + 1, end):
-        stripped = lines[index].strip()
+        stripped = visible[index].strip()
         owner_match = re.match(r"^-\s*Owner\s*:\s*(.*)$", stripped)
         if owner_match:
             owner = owner_match.group(1).strip()
@@ -229,6 +241,7 @@ def task_hints_from_text(tasks_md: str, tasks_path: Path, task_id: str) -> Dict[
 def update_task_index_table(md_lines: List[str], task_id: str, owner: str, status: str) -> bool:
     for index, parts in table_rows(md_lines):
         if parts[0] == task_id:
+            parts = cells(md_lines[index], decode=False)
             parts[2], parts[3] = owner, status
             md_lines[index] = "| " + " | ".join(parts) + " |\n"
             return True
@@ -240,13 +253,14 @@ def update_task_details_section(md_lines: List[str], task_id: str, owner: str, s
     if section is None:
         return False
     start, end = section
+    visible = list(visible_lines(md_lines))
 
     owner_found = False
     status_found = False
     changed = False
 
     for index in range(start + 1, end):
-        stripped = md_lines[index].lstrip()
+        stripped = visible[index].lstrip()
         if re.match(r"^-\s*Owner\s*:", stripped):
             md_lines[index] = f"- Owner: {owner}\n"
             owner_found = True

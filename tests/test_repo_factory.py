@@ -155,6 +155,21 @@ class TestV15ScaffoldInputs(unittest.TestCase):
             for value in ("../outside", "/outside"):
                 with self.assertRaises(ValueError):local(Path(temp),value)
 
+    def test_appendix_content_uses_semantic_section_titles(self):
+        from dasops.scaffold_v15 import document_check
+        control = ('## Document Control\n- Doc ID: fixture-note\n- Owner: fixture-owner\n'
+                   '- Status: draft\n- Governing standard: DAS 1.5.0-beta.1\n'
+                   '- Interaction profile: headless\n')
+        for kind, title in (('headless_surface_note', 'Verification'), ('context_pack', 'Verify')):
+            authors = {kind: control+'### '+title+'\n<commands and evidence>\n### Other\nOther prose.\n'}
+            for heading in ('7. '+title+' (project guidance)', title.lower()):
+                prefix = control+'### '+heading+'\n'
+                with self.subTest(kind=kind, heading=heading):
+                    document_check(kind, (prefix+'Run `pytest`; retain the report.\n### Other\nOther prose.\n').encode(), authors)
+                    for value in ('', '<!-- hidden value -->', '```text\nexample\n```'):
+                        with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'visible content'):
+                            document_check(kind, (prefix+value+'\n### Other\nOther prose.\n').encode(), authors)
+
 
 if __name__ == "__main__":
     unittest.main()
