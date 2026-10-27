@@ -60,7 +60,7 @@ empty values for this beta or change the historical validation route.
 2. Add `buildWheels`, a mapping with exactly the setuptools, wheel and packaging
    wheel filenames. Each value has relative `path` and raw `sha256`; match the
    reviewed build dependency pins. The fixed builder is delivered at
-   `tools/release/build_tool_assets.py` in the public repository (shared source
+   [`tools/build_tool_assets.py`](../tools/build_tool_assets.py) in the public repository (shared source
    with Cadence). Do not replace it with code supplied by the candidate.
 3. From an approved materials-preparation workflow in this same GitHub
    repository, upload the entire directory with `actions/upload-artifact`, so
