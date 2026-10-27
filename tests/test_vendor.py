@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+import pytest
 
 from dasops.vendor import load_vendor_lock, validate_vendor_integrity, enforce_vendor_lock
 
@@ -307,3 +308,137 @@ def test_native_identity_requires_literal_false(tmp_path, monkeypatch):
     monkeypatch.setattr(modern.subprocess,'run',lambda *a,**kw:SimpleNamespace(returncode=0,stdout=json.dumps(identity)))
     legacy.binary_identity(binary,'a'*40,'1.5.0-beta.1',sha)
     assert modern.installed(tmp_path)==binary
+
+
+def _modern_runtime_fixture(root):
+    """Real process/record fixture; no compiler or fake install-success claim."""
+    import sys
+    from dasops import scaffold_v15 as scaffold
+    runtime = dict(kind='git', uri='https://example.invalid/cadence.git',
+                   pinType='commit', pinValue='a'*40, floating=False)
+    base = root/scaffold.VENDOR
+    binary = base/'.cadence/bin/cadence'; binary.parent.mkdir(parents=True)
+    binary.write_text(
+        f'#!{sys.executable}\n'
+        'import hashlib,json,sys,time\nfrom pathlib import Path\n'
+        'if sys.argv[1:]==["version","--json"]:\n'
+        ' print(json.dumps(dict(sourceRevision="'+'a'*40+'",sourceModified=False,releaseVersion="1.2.0-beta.1",goos="linux",goarch="amd64",goVersion="fixture",binarySha256="sha256:"+hashlib.sha256(Path(__file__).read_bytes()).hexdigest())))\n'
+        'else:\n Path("native-called").write_text("started")\n'
+        ' while not Path("native-release").exists(): time.sleep(0.01)\n'
+        ' sys.exit(7)\n')
+    binary.chmod(0o755)
+    (base/'resource.json').write_text('{}\n')
+    resources = {'resource.json':scaffold.digest(b'{}\n')}
+    scaffold.write_json(root/scaffold.STATE,dict(selectedSources={'runtime':runtime},resourceDigests=resources))
+    scaffold.write_json(root/'tooling_lock.json',dict(verifyRuntime=runtime))
+    for path in ('tooling/das/suite/suite_version_closure.json','tooling/das/suite_version_closure.json'):
+        scaffold.write_json(root/path,dict(refs={'verifyRuntime':runtime}))
+    scaffold.write_json(base/'.dasops-install.json',dict(runtime=runtime,releaseVersion='1.2.0-beta.1',
+        binaryPath='.cadence/bin/cadence',binaryDigest=scaffold.digest(binary.read_bytes())))
+    return binary
+
+
+@pytest.mark.parametrize('interrupt_wrapper',[False,True])
+def test_v15_runtime_read_guard_serializes_replacement(tmp_path,interrupt_wrapper):
+    import fcntl
+    import subprocess
+    import sys
+    import time
+    _modern_runtime_fixture(tmp_path)
+    guard_dir=tmp_path/'.cadence/tmp';guard_dir.mkdir(parents=True)
+    child=subprocess.Popen([sys.executable,'-c',
+        'from pathlib import Path; from dasops.scaffold_v15 import run_native; '
+        'raise SystemExit(run_native(Path.cwd(),["verify"]))'],cwd=tmp_path,
+        stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    writer=None
+    try:
+        limit=time.monotonic()+5
+        while not (tmp_path/'native-called').exists() and child.poll() is None and time.monotonic()<limit:
+            time.sleep(0.01)
+        assert (tmp_path/'native-called').exists(),child.communicate(timeout=1)
+        if interrupt_wrapper:
+            child.terminate();child.wait(timeout=5)
+        with (guard_dir/'install.guard').open('a+b') as guard:
+            try:fcntl.flock(guard.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:pass
+            else:raise AssertionError('1.5 runtime was executing without its read guard')
+        writer=subprocess.Popen([sys.executable,'-c',
+            'from pathlib import Path; from dasops import scaffold_v15 as s; '
+            's._install_locked=lambda *a: Path("writer-entered").write_text("entered"); '
+            's.install(Path.cwd(),Path.cwd(),True)'],cwd=tmp_path,
+            stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:writer.wait(timeout=0.2)
+        except subprocess.TimeoutExpired:pass
+        else:raise AssertionError('replacement entered while runtime was executing')
+        assert not (tmp_path/'writer-entered').exists()
+        (tmp_path/'native-release').write_text('continue')
+        output=child.communicate(timeout=5);assert child.returncode==(-15 if interrupt_wrapper else 7),output
+        output=writer.communicate(timeout=5);assert writer.returncode==0,output
+        assert (tmp_path/'writer-entered').read_text()=='entered'
+    finally:
+        (tmp_path/'native-release').write_text('continue')
+        for process in (child,writer):
+            if process is not None and process.poll() is None:
+                process.kill();process.communicate(timeout=5)
+
+
+def test_v15_runtime_rejects_linked_vendor_ancestors(tmp_path):
+    import pytest
+    from dasops import scaffold_v15 as scaffold
+    binary=_modern_runtime_fixture(tmp_path)
+    assert scaffold.installed(tmp_path)==binary
+    for name in ('vendor','vendor/cadence','vendor/cadence/cadence-oss'):
+        path=tmp_path/name;relocated=tmp_path/'relocated'
+        path.rename(relocated);path.symlink_to(relocated,target_is_directory=True)
+        try:
+            with pytest.raises(ValueError,match='linked'):scaffold.installed(tmp_path)
+        finally:path.unlink();relocated.rename(path)
+    assert scaffold.installed(tmp_path)==binary
+
+
+def test_v15_runtime_rejects_nonobject_native_identity(tmp_path,monkeypatch):
+    import pytest
+    import subprocess
+    from dasops import scaffold_v15 as scaffold
+    _modern_runtime_fixture(tmp_path)
+    for value in ('[]','null','0','"identity"'):
+        monkeypatch.setattr(scaffold.subprocess,'run',lambda *a,**kw:subprocess.CompletedProcess(a,0,stdout=value))
+        with pytest.raises(ValueError,match='identity'):scaffold.installed(tmp_path)
+
+
+def test_v15_install_preserves_concurrent_empty_destination(tmp_path,monkeypatch):
+    import subprocess
+    import pytest
+    from dasops import scaffold_v15 as s
+    product=tmp_path/'product';binary=_modern_runtime_fixture(product)
+    binary_bytes=binary.read_bytes();target=product/s.VENDOR
+    old_record=(target/'.dasops-install.json').read_bytes()
+    suite=tmp_path/'suite';source=suite/'source';source.mkdir(parents=True)
+    state=s.load(product/s.STATE)
+    s.write_json(suite/'suite_version_closure.json',dict(refs={'verifyRuntime':state['selectedSources']['runtime']}))
+    (source/'resource.json').write_bytes(b'{}\n')
+    (source/'VERSION').write_text('1.2.0-beta.1\n')
+    for name in ('LICENSE','NOTICE','THIRD_PARTY_NOTICES.md'):(source/name).write_text('fixture\n')
+    monkeypatch.setattr(s,'suite_inputs',lambda *a:(suite,{'cadence-oss':source},{}))
+    monkeypatch.setattr(s,'git',lambda *a:'a'*40)
+    monkeypatch.setattr(s,'resource_manifest',lambda *a:state['resourceDigests'])
+    original_run=s.subprocess.run;original_rename=Path.rename
+    def build(args,*a,**kw):
+        if args[:2]==['go','build']:
+            output=Path(args[args.index('-o')+1]);output.write_bytes(binary_bytes);output.chmod(0o755)
+            return subprocess.CompletedProcess(args,0)
+        return original_run(args,*a,**kw)
+    occupied=[]
+    def collide(path,destination):
+        result=original_rename(path,destination)
+        if path==target:
+            target.mkdir(mode=0o700);occupied.append(target.stat().st_ino)
+        return result
+    monkeypatch.setattr(s.subprocess,'run',build);monkeypatch.setattr(Path,'rename',collide)
+    with pytest.raises(s.PublicationRecoveryRequired,match='preserved previous installation'):
+        s.install(product,suite,force=True)
+    assert occupied and target.stat().st_ino==occupied[0] and list(target.iterdir())==[]
+    backups=list(target.parent.glob('.cadence-install-*/previous'))
+    assert len(backups)==1 and (backups[0]/'.dasops-install.json').read_bytes()==old_record
+    target.rmdir();s._publish(backups[0],target)
+    assert s.installed(product)==binary

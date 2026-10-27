@@ -599,3 +599,40 @@ def test_document_metadata_does_not_parse_path_guidance_as_fields():
     assert metadata(text)=={'Owner':'owner'}
     with pytest.raises(ValueError,match='ambiguous document metadata: Owner'):
         metadata(text+'- Owner: `other`\n')
+
+
+def test_legacy_lock_write_preserves_temp_link_targets(tmp_path):
+    from dasops.lock import acquire, heartbeat, release
+    root=tmp_path/'locks';root.mkdir()
+    outside=tmp_path/'outside';outside.write_bytes(b'preserve user bytes')
+    trap=root/'task.lock.json.tmp';trap.symlink_to(outside)
+    lock=acquire(root,'task','owner',now=1)
+    assert outside.read_bytes()==b'preserve user bytes'
+    assert trap.is_symlink(), 'unowned temporary name must not be removed or replaced'
+    assert heartbeat(root,'task',lock.lockToken,now=2).heartbeatAt==2
+    release(root,'task',lock.lockToken)
+    assert sorted(p.name for p in root.iterdir())==['task.lock.json.tmp']
+
+
+def test_legacy_lock_rejects_invalid_writes_before_replacing_records(tmp_path):
+    from dasops.lock import acquire, heartbeat, release
+    root=tmp_path/'locks';root.mkdir()
+    lock=acquire(root,'task','owner',now=1,lease_seconds=1)
+    path=root/'task.lock.json';before=path.read_bytes()
+    for args in ({'owner':''},{'owner':False},{'lease_seconds':0},
+                 {'lease_seconds':True},{'lease_seconds':-1},{'now':float('nan')},
+                 {'now':float('inf')},{'now':True}):
+        kwargs=dict(owner='replacement',now=5,lease_seconds=2);kwargs.update(args)
+        with pytest.raises(ValueError):acquire(root,'task',**kwargs)
+        assert path.read_bytes()==before
+    for now in (float('nan'),float('inf'),True):
+        with pytest.raises(ValueError):heartbeat(root,'task',lock.lockToken,now=now)
+        assert path.read_bytes()==before
+    for task in ('../escape',str(tmp_path/'absolute'),'','.', '..','bad\\name'):
+        with pytest.raises(ValueError):acquire(root,task,'owner',now=5)
+        with pytest.raises(ValueError):release(root,task,'token')
+    assert sorted(p.name for p in tmp_path.iterdir())==['locks']
+    assert sorted(p.name for p in root.iterdir())==['task.lock.json']
+    replacement=acquire(root,'task','replacement',now=5)
+    assert heartbeat(root,'task',replacement.lockToken,now=6).owner=='replacement'
+    release(root,'task',replacement.lockToken)

@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -174,6 +175,10 @@ The wrapper checks the fixed binary and resources on each invocation and never
 falls back to another cadence on PATH. Doctor may create .cadence/tmp. Native
 verification writes evidence under .cadence/out; a core pass covers only its
 implemented checks, not full DAS conformance.
+Runtime reads and execution share the installation guard. Explicit --force
+replacement waits for an active native command to finish. Linked vendor paths
+are refused. A concurrent destination is preserved rather than overwritten;
+resolve that conflict before restoring the previous installation named by the error.
 
 Run the product's complete configured checks:
 
@@ -887,7 +892,8 @@ def verify(root, scope='scaffold'):
             if 'ui_spec' in docs:
                 run_frontend(root)
                 checks.append(dict(name='product-frontend-command',status='passed',command='scripts/verify-frontend'))
-            result=subprocess.run([str(installed(root)),'verify','--profile','dev'],cwd=root,capture_output=True,text=True,check=False)
+            with runtime_guard(root) as guard:
+                result=subprocess.run([str(_installed(root)),'verify','--profile','dev'],cwd=root,capture_output=True,text=True,check=False,pass_fds=(guard,))
             if result.returncode:
                 detail='\n'.join(part.strip() for part in (result.stdout,result.stderr) if part.strip())
                 raise ValueError(f'native core verification failed (exit {result.returncode}): '+detail)
@@ -917,9 +923,26 @@ def check_runtime_selection(root,state):
             raise ValueError('product runtime selection differs: expected '+json.dumps(expected,sort_keys=True)+', observed '+json.dumps(observed,sort_keys=True))
 
 
+@contextmanager
+def runtime_guard(root, *, exclusive=False):
+    import fcntl
+    root=Path(root).resolve()
+    guard_dir=local(root,'.cadence/tmp');guard_dir.mkdir(parents=True,exist_ok=True)
+    descriptor=os.open(guard_dir/'install.guard',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+    with os.fdopen(descriptor,'r+b') as guard:
+        fcntl.flock(guard.fileno(),fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        yield guard.fileno()
+
+
 def installed(root):
+    root=Path(root).resolve()
+    with runtime_guard(root):
+        return _installed(root)
+
+
+def _installed(root):
     state=load(root/STATE);check_runtime_selection(root,state)
-    base=root/VENDOR;record=load(base/'.dasops-install.json')
+    base=local(root,VENDOR);record=load(base/'.dasops-install.json')
     if record['runtime']!=state['selectedSources']['runtime']:
         raise ValueError('installed runtime source differs: expected '+json.dumps(state['selectedSources']['runtime'],sort_keys=True)+', observed '+json.dumps(record['runtime'],sort_keys=True))
     for path,expected in state['resourceDigests'].items():
@@ -931,6 +954,7 @@ def installed(root):
     proc=subprocess.run([str(binary),'version','--json'],capture_output=True,text=True,timeout=10)
     if proc.returncode:raise ValueError('installed version check failed')
     identity=json.loads(proc.stdout)
+    if not isinstance(identity,dict):raise ValueError('native identity must be a JSON object')
     expected=dict(binarySha256=record['binaryDigest'],releaseVersion=record['releaseVersion'],sourceModified=False,sourceRevision=record['runtime']['pinValue'])
     observed={key:identity.get(key) for key in expected}
     if observed!=expected or identity.get('sourceModified') is not False:
@@ -939,16 +963,14 @@ def installed(root):
 
 
 def run_native(root,args):
-    return subprocess.run([str(installed(root)),*args],cwd=root,check=False).returncode
+    root=Path(root).resolve()
+    with runtime_guard(root) as guard:
+        return subprocess.run([str(_installed(root)),*args],cwd=root,check=False,pass_fds=(guard,)).returncode
 
 
 def install(root, suite, force=False):
-    import fcntl
     root=Path(root).resolve()
-    guard_dir=local(root,'.cadence/tmp');guard_dir.mkdir(parents=True,exist_ok=True)
-    descriptor=os.open(guard_dir/'install.guard',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
-    with os.fdopen(descriptor,'r+b') as guard:
-        fcntl.flock(guard.fileno(),fcntl.LOCK_EX)
+    with runtime_guard(root,exclusive=True):
         return _install_locked(root,suite,force)
 
 
@@ -960,9 +982,10 @@ def _install_locked(root, suite, force=False):
     if selected!=state['selectedSources']['runtime']:
         raise ValueError('install runtime reference differs: expected '+json.dumps(state['selectedSources']['runtime'],sort_keys=True)+', observed '+json.dumps(selected,sort_keys=True))
     if resource_manifest(source)!=state['resourceDigests']:raise ValueError('install resources differ from planned runtime')
-    target=root/VENDOR
+    target=local(root,VENDOR)
     if target.exists() and not force:raise ValueError('runtime already installed; use --force explicitly')
-    if target.is_symlink() or (root/'vendor').is_symlink() or (root/'vendor/cadence').is_symlink():raise ValueError('linked vendor target refused')
+    if target.exists() and not target.is_dir():raise ValueError('runtime installation must be a directory')
+    initial=target.stat() if target.exists() else None
     target.parent.mkdir(parents=True,exist_ok=True)
     temp=tempfile.mkdtemp(prefix='.cadence-install-',dir=target.parent)
     preserve=False
@@ -980,17 +1003,23 @@ def _install_locked(root, suite, force=False):
         for path,expected in state['resourceDigests'].items():
             if digest(read(staged/path))!=expected:raise ValueError('staged resource changed')
         identity=json.loads(subprocess.check_output([str(binary),'version','--json'],text=True,timeout=10))
+        if not isinstance(identity,dict):raise ValueError('built native identity must be a JSON object')
         if identity['sourceModified'] is not False or identity['sourceRevision']!=record['runtime']['pinValue'] or identity['releaseVersion']!=release or identity['binarySha256']!=record['binaryDigest']:
             raise ValueError('built runtime identity differs; previous install retained')
         record['platform'] = {key:identity[key] for key in ('goos','goarch','goVersion')}
         write_json(staged/'.dasops-install.json',record)
         previous=Path(temp)/'previous'
-        if target.exists():target.rename(previous)
-        try:staged.rename(target)
-        except OSError:
+        local(root,VENDOR)
+        if initial is not None:
+            current=target.stat()
+            if (current.st_dev,current.st_ino)!=(initial.st_dev,initial.st_ino):
+                raise ValueError('runtime destination changed; previous content retained')
+            target.rename(previous)
+        try:_publish(staged,target)
+        except (OSError,ValueError):
             if previous.exists():
-                try: previous.rename(target)
-                except OSError as exc:
+                try: _publish(previous,target)
+                except (OSError,ValueError) as exc:
                     preserve=True
                     raise PublicationRecoveryRequired('restore the preserved previous installation at '+str(previous)) from exc
             raise
@@ -1010,7 +1039,7 @@ def main(argv=None):
             if not args.from_suite:raise ValueError('install requires the selected --from-suite workspace')
             print(json.dumps(install(root,args.from_suite,args.force),indent=2));return 0
         result=verify(root,args.scope);print(json.dumps(result,indent=2));return 0 if result['ok'] else 1
-    except (ValueError,OSError,KeyError,TypeError,subprocess.SubprocessError) as exc:
+    except (ValueError,OSError,KeyError,TypeError,PublicationRecoveryRequired,subprocess.SubprocessError) as exc:
         print('DAS scaffold: '+str(exc),file=sys.stderr);return 2
 
 
