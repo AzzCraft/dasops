@@ -23,7 +23,8 @@ IMAGE_ID = 'sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec
 IMAGE_REF = 'docker.io/library/python@' + IMAGE_ID
 GO_URL = 'https://go.dev/dl/go1.26.9.linux-amd64.tar.gz'
 GO_SHA = '42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d'
-GO_TREE = '0d56e3f404a365c1c07829ba5411974b31e9fb9c1ebe5aaf0bbdbbbefec08766'
+# Full official distribution, not a stripped/read-only GOTOOLCHAIN module cache.
+GO_TREE = 'f72592e4216c2466120148e7aa4fdffec759b4fb52c4048a743d7aec4586893e'
 EPOCHS = {'cadence-oss': 1793074441, 'dasops': 1793074507}
 WHEELS = {
     'setuptools-84.1.0-py3-none-any.whl': (
@@ -74,7 +75,7 @@ def go_tree(bundle):
                 rows.append([path.relative_to('go').as_posix(), member.mode, member.size, digest.hexdigest()])
     if not rows:
         raise ValueError('empty Go archive')
-    return hashlib.sha256(json.dumps(sorted(rows), separators=(',', ':')).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(sorted(rows, key=lambda row: PurePosixPath(row[0])), separators=(',', ':')).encode()).hexdigest()
 
 
 def prepare(component, out):
