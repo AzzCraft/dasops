@@ -12,9 +12,11 @@ import json
 import math
 import os
 import secrets
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from ..identities import validate_id
 
 DEFAULT_LEASE_SECONDS = 300
 
@@ -29,7 +31,7 @@ class Lock:
     heartbeatAt: float
 
     def is_stale(self, now: float | None = None) -> bool:
-        now = now if now is not None else time.time()
+        now = _timestamp(now if now is not None else time.time())
         return (self.heartbeatAt + self.leaseSeconds) < now
 
 
@@ -42,7 +44,33 @@ class InvalidToken(RuntimeError):
 
 
 def _path(root: Path, task_id: str) -> Path:
+    validate_id('task_id', task_id)
     return root / f"{task_id}.lock.json"
+
+
+def _timestamp(value):
+    try:
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise ValueError('invalid timestamp')
+    except OverflowError as exc:
+        raise ValueError('invalid timestamp') from exc
+    return value
+
+
+def _validated(data, path):
+    fields = {"taskId", "lockToken", "owner", "leaseSeconds", "acquiredAt", "heartbeatAt"}
+    if not isinstance(data, dict) or set(data) != fields:
+        raise ValueError("invalid fields")
+    if any(not isinstance(data[k], str) or not data[k].strip() for k in ("taskId", "lockToken", "owner")):
+        raise ValueError("invalid identity")
+    validate_id('task_id', data['taskId'])
+    if path.name != data["taskId"] + ".lock.json":
+        raise ValueError("taskId does not match record filename")
+    if type(data["leaseSeconds"]) is not int or data["leaseSeconds"] <= 0:
+        raise ValueError("invalid lease")
+    for key in ("acquiredAt", "heartbeatAt"):
+        _timestamp(data[key])
+    return Lock(**data)
 
 
 def _read(path: Path) -> Lock | None:
@@ -59,27 +87,21 @@ def _read(path: Path) -> Lock | None:
                 result[key] = value
             return result
         data = json.loads(path.read_text("utf-8"), object_pairs_hook=unique_fields)
-        fields = {"taskId", "lockToken", "owner", "leaseSeconds", "acquiredAt", "heartbeatAt"}
-        if not isinstance(data, dict) or set(data) != fields:
-            raise ValueError("invalid fields")
-        if any(not isinstance(data[k], str) or not data[k].strip() for k in ("taskId", "lockToken", "owner")):
-            raise ValueError("invalid identity")
-        if path.name != data["taskId"] + ".lock.json":
-            raise ValueError("taskId does not match record filename")
-        if type(data["leaseSeconds"]) is not int or data["leaseSeconds"] <= 0:
-            raise ValueError("invalid lease")
-        if any(type(data[k]) not in (int, float) or not math.isfinite(data[k]) for k in ("acquiredAt", "heartbeatAt")):
-            raise ValueError("invalid timestamps")
-        return Lock(**data)
+        return _validated(data, path)
     except (ValueError, TypeError) as exc:
         raise ValueError(f"invalid lock record {path}: {exc}") from exc
 
 
 def _write(path: Path, lock: Lock) -> None:
+    _validated(asdict(lock), path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(asdict(lock), indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    fd, name = tempfile.mkstemp(prefix='.dasops-lock-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(json.dumps(asdict(lock), indent=2, allow_nan=False))
+        os.replace(name, path)
+    finally:
+        Path(name).unlink(missing_ok=True)
 
 
 def acquire(
@@ -91,14 +113,8 @@ def acquire(
     now: float | None = None,
 ) -> Lock:
     """Acquire a lock; reclaims if existing lock is stale."""
-    now = now if now is not None else time.time()
+    now = _timestamp(now if now is not None else time.time())
     path = _path(root, task_id)
-    existing = _read(path)
-    if existing and not existing.is_stale(now):
-        raise LockConflict(
-            f"task {task_id!r} held by {existing.owner!r} until "
-            f"{existing.heartbeatAt + existing.leaseSeconds:.0f}"
-        )
     lock = Lock(
         taskId=task_id,
         lockToken=secrets.token_hex(16),
@@ -107,13 +123,20 @@ def acquire(
         acquiredAt=now,
         heartbeatAt=now,
     )
+    _validated(asdict(lock), path)
+    existing = _read(path)
+    if existing and not existing.is_stale(now):
+        raise LockConflict(
+            f"task {task_id!r} held by {existing.owner!r} until "
+            f"{existing.heartbeatAt + existing.leaseSeconds:.0f}"
+        )
     _write(path, lock)
     return lock
 
 
 def heartbeat(root: Path, task_id: str, lock_token: str, *, now: float | None = None) -> Lock:
     """Refresh the heartbeat timestamp; raises if token doesn't match."""
-    now = now if now is not None else time.time()
+    now = _timestamp(now if now is not None else time.time())
     path = _path(root, task_id)
     existing = _read(path)
     if existing is None:
@@ -137,7 +160,7 @@ def release(root: Path, task_id: str, lock_token: str) -> None:
 
 def reclaim_stale(root: Path, *, now: float | None = None) -> list[str]:
     """Remove stale lock files; returns list of reclaimed task IDs."""
-    now = now if now is not None else time.time()
+    now = _timestamp(now if now is not None else time.time())
     reclaimed: list[str] = []
     if not root.is_dir():
         return reclaimed
