@@ -19,8 +19,11 @@ import urllib.request
 
 from build_tool_assets import sha
 
-IMAGE_ID = 'sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec56b'
-IMAGE_REF = 'docker.io/library/python@' + IMAGE_ID
+# The registry index and its linux/amd64 configuration are different objects.
+# Docker classic reports the config ID; containerd's image store reports the index.
+IMAGE_REGISTRY_DIGEST = 'sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec56b'
+IMAGE_ID = 'sha256:3ad37ccd1797321f4bda14f483941a4f7a2b9eca454847b22652e59f5baab8c9'
+IMAGE_REF = 'docker.io/library/python@' + IMAGE_REGISTRY_DIGEST
 GO_URL = 'https://go.dev/dl/go1.26.9.linux-amd64.tar.gz'
 GO_SHA = '42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d'
 # Full official distribution, not a stripped/read-only GOTOOLCHAIN module cache.
@@ -85,12 +88,14 @@ def prepare(component, out):
                    check=True, timeout=300, stdout=sys.stderr)
     info = json.loads(subprocess.check_output(
         ['docker', '--context', 'default', 'image', 'inspect', IMAGE_REF], timeout=30))[0]
-    if info['Id'] != IMAGE_ID or info['Os'] != 'linux' or info['Architecture'] != 'amd64':
+    if (info['Id'] not in {IMAGE_ID, IMAGE_REGISTRY_DIGEST}
+            or info['Os'] != 'linux' or info['Architecture'] != 'amd64'
+            or not any(ref.endswith('@' + IMAGE_REGISTRY_DIGEST) for ref in info.get('RepoDigests', []))):
         raise ValueError('downloaded image identity differs')
     image = out / 'python-image.tar'
-    subprocess.run(['docker', '--context', 'default', 'image', 'save', '--output', str(image), IMAGE_ID],
+    subprocess.run(['docker', '--context', 'default', 'image', 'save', '--output', str(image), info['Id']],
                    check=True, timeout=180, stdout=sys.stderr)
-    config = dict(imageId=IMAGE_ID, platform='linux/amd64', sourceDateEpoch=epoch,
+    config = dict(imageId=info['Id'], platform='linux/amd64', sourceDateEpoch=epoch,
                   imageArchive={'path': image.name, 'sha256': sha(image)})
     if component == 'cadence-oss':
         compressed, bundle = out / 'go.tar.gz', out / 'go-toolchain.tar'
