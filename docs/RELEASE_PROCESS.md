@@ -62,12 +62,19 @@ empty values for this beta or change the historical validation route.
    reviewed build dependency pins. The fixed builder is delivered at
    [`tools/build_tool_assets.py`](../tools/build_tool_assets.py) in the public repository (shared source
    with Cadence). Do not replace it with code supplied by the candidate.
-3. From an approved materials-preparation workflow in this same GitHub
-   repository, upload the entire directory with `actions/upload-artifact`, so
-   `build-materials.json` is at the downloaded artifact root. This repository
-   does not ship a materials acquisition/upload workflow. Use an existing
-   approved run, or arrange that preparation before dispatching the release;
-   a local folder or a GitHub Release attachment is not an Actions artifact ID.
+3. Run `gh workflow run prepare-materials.yml --ref main --repo AzzCraft/dasops`.
+   The reviewed default-branch workflow downloads only the fixed Python image,
+   official Go archive or three PyPI wheels; verifies their pinned identities;
+   and uploads `dasops-build-materials-<run_id>-<run_attempt>`.
+   It has read-only repository permissions and no signing or release authority.
+   The selected platform, upstream SHA256 values and beta epochs are in
+   [`prepare_build_materials.py`](../tools/prepare_build_materials.py). Review changes to those constants
+   before running a different material set. Docker archive bytes can vary across
+   Docker versions; bind the actual saved archive in the generated manifest.
+   An old local manifest digest must not be substituted for this run's digest.
+   The run summary reports all three inputs below. Artifact transport retains
+   Go modes inside its tar; the release workflow downloads the single selected
+   ID directly into the material directory using `merge-multiple: true`.
 4. Record that run's numeric ID and the uploaded artifact's numeric ID. Check
    their association and expiry using
    `gh api repos/REPOSITORY/actions/artifacts/ARTIFACT_ID`; its `workflow_run.id`

@@ -1,0 +1,47 @@
+name: prepare-beta-materials
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Require reviewed default branch
+        shell: bash
+        env:
+          WORKFLOW_REF: "${{ github.workflow_ref }}"
+          DEFAULT_BRANCH: "${{ github.event.repository.default_branch }}"
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_REF" == *"@refs/heads/$DEFAULT_BRANCH" ]]
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+          ref: "${{ github.sha }}"
+      - name: Acquire fixed materials and bind actual archive bytes
+        id: materials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/prepare_build_materials.py --component dasops --out "$RUNNER_TEMP/materials" >> "$GITHUB_OUTPUT"
+      - name: Upload only verified build materials
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: "dasops-build-materials-${{ github.run_id }}-${{ github.run_attempt }}"
+          path: "${{ runner.temp }}/materials/"
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Record release dispatch inputs
+        env:
+          ARTIFACT_ID: "${{ steps.upload.outputs.artifact-id }}"
+          MATERIALS_SHA256: "${{ steps.materials.outputs.materials_sha256 }}"
+        run: |
+          printf 'materials_artifact_id=%s\nmaterials_run_id=%s\nmaterials_sha256=%s\n' \
+            "$ARTIFACT_ID" "$GITHUB_RUN_ID" "$MATERIALS_SHA256" >> "$GITHUB_STEP_SUMMARY"
